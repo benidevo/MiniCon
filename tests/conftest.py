@@ -1,7 +1,7 @@
 """Test fixtures for MiniCon."""
 
 import json
-from unittest.mock import mock_open, patch
+from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 
@@ -57,3 +57,12 @@ def mock_registry_file(registry_file_content):
 @pytest.fixture
 def registry(mock_registry_file):
     return ContainerRegistry(registry_file="test_containers.json")
+
+
+@pytest.fixture
+def mock_libc_unshare():
+    with patch("ctypes.CDLL") as mock_cdll:
+        mock_libc = MagicMock()
+        mock_libc.unshare.return_value = 0
+        mock_cdll.return_value = mock_libc
+        yield mock_libc

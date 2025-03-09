@@ -3,7 +3,7 @@
 import ctypes
 import logging
 import os
-from typing import Any, Callable, Optional
+from typing import Optional
 
 from src.namespace.handlers import NamespaceHandler
 
@@ -20,7 +20,7 @@ class MountNamespaceHandler(NamespaceHandler):
 
     def __init__(self) -> None:
         """Initialize Mount namespace handler."""
-        self._child_pid: Optional[int] = None
+        super().__init__()
         self._root_fs: Optional[str] = None
 
     def setup(self) -> None:
@@ -36,30 +36,6 @@ class MountNamespaceHandler(NamespaceHandler):
             raise OSError(errno, f"unshare failed: {os.strerror(errno)}")
 
         logger.info("Mount namespace setup completed.")
-
-    def fork_in_new_namespace(self, child_func: Callable[[], Any]) -> int:
-        """Fork a process in the new Mount namespace.
-
-        This should be called after setup() by the orchestrator.
-        The child process will be PID 1 in the new namespace.
-
-        Args:
-            child_func: Function to call in the child process.
-
-        Returns:
-            The PID (in the parent namespace) of the forked child.
-        """
-        pid = os.fork()
-        if pid == 0:
-            try:
-                exit_code = child_func()
-                os._exit(exit_code if isinstance(exit_code, int) else 0)
-            except Exception as e:
-                logger.error(f"Error in container process: {e}")
-                os._exit(1)
-        else:
-            self._child_pid = pid
-        return pid
 
     def set_root_fs(self, root_fs_path: str) -> None:
         """Set the root filesystem for the container.
@@ -89,15 +65,6 @@ class MountNamespaceHandler(NamespaceHandler):
         os.system(f"mount -t proc proc {proc_path}")
 
         logger.info(f"Mount isolation applied to {self._root_fs}, proc mounted.")
-
-    @property
-    def child_pid(self) -> Optional[int]:
-        """Get the PID of the child process in the parent namespace.
-
-        Returns:
-            The PID of the child or None if not created.
-        """
-        return self._child_pid
 
     @property
     def root_fs(self) -> Optional[str]:

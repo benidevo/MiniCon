@@ -22,4 +22,7 @@ lint:
 test:
 	poetry run pytest -xvs tests/
 
+test-coverage:
+	poetry run pytest --cov=src tests/
+
 check-all: format lint test

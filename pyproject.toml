@@ -12,6 +12,73 @@ dependencies = [
 ]
 
 
+[tool.poetry]
+name = "minicon"
+version = "0.1.0"
+description = "A lightweight container implementation in Python"
+authors = [
+    "Benjamin Idewor <benjaminidewor@gmail.com>",
+]
+readme = "README.md"
+packages = [{include = "src"}]
+
+
+[tool.poetry.dependencies]
+python = "^3.11"
+
+
+[project.optional-dependencies]
+dev = [
+    "pre-commit",
+    "black",
+    "isort",
+    "flake8",
+    "flake8-docstrings",
+    "mypy",
+    "pytest",
+    "pytest-cov",
+]
+
+
+[tool.poetry.group.dev.dependencies]
+pre-commit = "^4.1.0"
+black = "^25.1.0"
+isort = "^6.0.1"
+flake8 = "^7.1.2"
+flake8-docstrings = "^1.7.0"
+mypy = "^1.15.0"
+pytest = "^8.3.5"
+pytest-cov = "^6.0.0"
+
+
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+
+[tool.black]
+line-length = 88
+target-version = ['py311']
+
+
+[tool.isort]
+profile = "black"
+line_length = 88
+multi_line_output = 3
+
+
+[tool.mypy]
+python_version = "3.11"
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+strict_optional = true
+
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false

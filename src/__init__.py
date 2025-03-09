@@ -1,0 +1,1 @@
+"""Minicon package."""

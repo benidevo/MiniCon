@@ -7,33 +7,16 @@ on:
     branches: [ master ]
 
 jobs:
-  lint-and-test:
+  build:
     runs-on: ubuntu-22.04
-    container:
-      image: debian:bullseye-slim
 
     steps:
     - uses: actions/checkout@v4
 
-    - name: Install system dependencies
-      run: |
-        apt-get update
-        apt-get install -y curl gnupg2 software-properties-common apt-transport-https ca-certificates lsb-release git
-
-    - name: Install Python 3.11
-      run: |
-        apt-get install -y wget build-essential libssl-dev zlib1g-dev \
-          libbz2-dev libreadline-dev libsqlite3-dev wget curl llvm \
-          libncurses5-dev libncursesw5-dev xz-utils tk-dev libffi-dev \
-          liblzma-dev python3-openssl
-        wget https://www.python.org/ftp/python/3.11.7/Python-3.11.7.tgz
-        tar -xf Python-3.11.7.tgz
-        cd Python-3.11.7
-        ./configure --enable-optimizations
-        make -j $(nproc)
-        make altinstall
-        ln -sf /usr/local/bin/python3.11 /usr/local/bin/python3
-        ln -sf /usr/local/bin/pip3.11 /usr/local/bin/pip3
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
 
     - name: Install Poetry
       run: |
@@ -42,18 +25,13 @@ jobs:
 
     - name: Install dependencies
       run: |
-        python3.11 -m pip install --upgrade pip
-        poetry config virtualenvs.in-project true
         poetry install --with dev
 
     - name: Lint with flake8
-      run: |
-        poetry run flake8
+      run: poetry run flake8
 
     - name: Type check with mypy
-      run: |
-        poetry run mypy src
+      run: poetry run mypy src
 
     - name: Test with pytest
-      run: |
-        poetry run pytest -xvs tests/
+      run: poetry run pytest -xvs tests/

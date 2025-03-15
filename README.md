@@ -31,7 +31,6 @@ This project aims to provide hands-on experience with:
 - Linux-based system (MiniCon is NOT cross-platform and works ONLY on Linux)
 - Python 3.11+
 - Root privileges (for namespace operations)
-- Alternatively, can be run in the provided Docker environment (see the `docker-compose.yaml`)
 
 ## Development
 

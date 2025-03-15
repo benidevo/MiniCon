@@ -1,12 +1,3 @@
-run:
-	docker compose up --build --remove-orphans
-
-enter:
-	docker exec -it minicon-dev bash
-
-stop:
-	docker compose down -v
-
 setup-dev:
 	poetry install --with dev
 	poetry run pre-commit install
@@ -27,4 +18,4 @@ test-coverage:
 
 check-all: format lint test
 
-.PHONY: run enter stop setup-dev format lint test test-coverage check-all
+.PHONY: setup-dev format lint test test-coverage check-all

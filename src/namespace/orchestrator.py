@@ -1,6 +1,9 @@
 """Namespace orchestrator for MiniCon."""
 
 import logging
+import os
+import signal
+import time
 from typing import List, Optional, Tuple
 
 from src.namespace.handlers.mount_namespace import MountNamespaceHandler
@@ -98,8 +101,8 @@ class NamespaceOrchestrator:
         self._mount_handler.set_root_fs(self._root_fs)
         self._uts_handler.set_hostname(self._hostname)
 
-        for inside_uid, outside_uid, count in gid_map:
-            self._user_handler.add_gid_mapping(inside_uid, outside_uid, count)
+        for inside_uid, outside_uid, count in uid_map:
+            self._user_handler.add_uid_mapping(inside_uid, outside_uid, count)
 
         for inside_gid, outside_gid, count in gid_map:
             self._user_handler.add_gid_mapping(inside_gid, outside_gid, count)
@@ -166,61 +169,262 @@ class NamespaceOrchestrator:
     def create_container_process(self) -> int:
         """Create the container process and return its PID.
 
-        This method is responsible for creating the container process,
-        setting up the various namespace handlers, and initiating the
-        execution of the container's command. It handles the necessary
-        steps to ensure the container's isolation and execution.
+        This method creates the container process in the new namespaces
+        by forking a child process and setting up the required isolation.
+        The child process will run the container command in the isolated
+        environment.
 
         Returns:
             The PID of the created container process.
         """
-        raise NotImplementedError
+        if not self._command:
+            raise ValueError("Command not set for container. Call configure() first.")
+
+        try:
+            self.setup_namespaces()
+            self._container_pid = self._pid_handler.fork_in_new_namespace(
+                self._container_entry_point
+            )
+            logger.info(f"Container process created with PID: {self._container_pid}")
+
+            self._setup_cgroups()
+        except Exception as e:
+            logger.error(f"Failed to create container process: {e}")
+            raise RuntimeError(f"Failed to create container process: {e}")
+
+        return self._container_pid
 
     def wait_for_exit(self) -> int:
         """Wait for the container process to exit.
 
-        This method waits for the container process to complete its execution and
-        returns the exit code of the process. It is a blocking call and should be
-        called after starting the container process.
+        This method waits for the container process to complete its
+        execution and returns the exit code of the process.
 
         Returns:
             The exit code of the container process.
         """
-        raise NotImplementedError
+        if not self._container_pid:
+            raise ValueError("Container process not created yet.")
+
+        logger.info(f"Waiting for container process {self._container_pid} to exit...")
+
+        _, status = os.waitpid(self._container_pid, 0)
+
+        if os.WIFEXITED(status):
+            exit_code = os.WEXITSTATUS(status)
+        else:
+            exit_code = -1
+
+        self._exit_code = exit_code
+        logger.info(
+            f"Container process {self._container_pid} exited with exit code {exit_code}"
+        )
+
+        self.cleanup_resources()
+
+        return exit_code
 
     def terminate(self) -> None:
         """Terminate the container process.
 
-        This method is responsible for terminating the container process. It should
-        be called when the container needs to be terminated, such as when the
-        orchestrator receives a signal to stop the container.
-
-        Returns:
-            None
+        This method is responsible for terminating the container process.
+        It sends SIGTERM to the process and waits for it to exit.
         """
-        raise NotImplementedError
+        if not self._container_pid:
+            raise ValueError("Container process not created yet.")
+
+        logger.info(f"Terminating container process {self._container_pid}...")
+
+        try:
+            os.kill(self._container_pid, signal.SIGTERM)
+
+            try:
+                _, status = os.waitpid(self._container_pid, os.WNOHANG)
+                if not os.WIFSIGNALED(status) and not os.WIFEXITED(status):
+                    timeout = 5
+                    time.sleep(timeout)
+
+                    _, status = os.waitpid(self._container_pid, os.WNOHANG)
+                    if not os.WIFSIGNALED(status) and not os.WIFEXITED(status):
+                        logger.warning(
+                            f"Container process {self._container_pid} did not "
+                            f"terminate after {timeout} seconds, sending SIGKILL"
+                        )
+                        os.kill(self._container_pid, signal.SIGKILL)
+            except ChildProcessError:
+                logger.info(
+                    f"Container process {self._container_pid} already terminated"
+                )
+                pass
+
+            if os.WIFEXITED(status):
+                self._exit_code = os.WEXITSTATUS(status)
+            else:
+                self._exit_code = -1
+
+            logger.info(
+                f"Container process {self._container_pid} "
+                f"terminated with exit code {self._exit_code}"
+            )
+        except ProcessLookupError as e:
+            logger.warning(
+                f"Container process {self._container_pid} already terminated: {e}"
+            )
+        except Exception as e:
+            logger.error(f"Failed to terminate container process: {e}")
+
+        self.cleanup_resources()
 
     def cleanup_resources(self) -> None:
         """Clean up resources allocated for the container.
 
-        This method is responsible for cleaning up any resources allocated
-        for the container, such as cgroups, namespaces, and other kernel
-        objects. It should be called after the container process has exited
-        and the orchestrator has finished waiting for its exit.
-
-        Returns:
-            None
+        This method removes the cgroup created for the container
+        and resets the internal state.
         """
-        raise NotImplementedError
+        if not self._container_pid:
+            return
+
+        logger.info(f"Cleaning up resources for container {self._container_pid}")
+
+        cgroup_path = f"/sys/fs/cgroup/minicon_{self._container_pid}"
+        if os.path.exists(cgroup_path):
+            try:
+                if os.path.exists(f"{cgroup_path}/cgroup.procs"):
+                    with open(f"{cgroup_path}/cgroup.procs", "r") as f:
+                        procs = f.read().strip().split("\n")
+
+                    if procs and procs[0]:
+                        with open("/sys/fs/cgroup/cgroup.procs", "w") as f:
+                            for proc in procs:
+                                try:
+                                    f.write(proc)
+                                except Exception:
+                                    pass
+
+                os.rmdir(cgroup_path)
+                logger.info(f"Removed cgroup {cgroup_path}")
+            except Exception as e:
+                logger.error(f"Error removing cgroup: {e}")
+
+        self._container_pid = None
 
     def _apply_isolation(self) -> None:
-        raise NotImplementedError
+        """Apply namespace isolation in the child process.
+
+        This method is called in the container process to apply the
+        namespace isolation such as changing root, mounting /proc,
+        and setting the hostname.
+        """
+        logger.info("Applying namespace isolation in container process")
+
+        if self._root_fs:
+            logger.info(f"Changing root to {self._root_fs}")
+            self._mount_handler.apply_mount_isolation()
+
+        if self._hostname:
+            logger.info(f"Setting hostname to {self._hostname}")
+            self._uts_handler.apply_uts_isolation()
+
+        if (
+            self._user_handler._uid_mappings
+            and self._user_handler._gid_mappings
+            and self._user_handler.child_pid
+        ):
+            logger.info("Applying user namespace isolation")
+            self._user_handler.apply_user_isolation()
+
+        logger.info("Namespace isolation applied successfully")
 
     def _setup_cgroups(self) -> None:
-        raise NotImplementedError
+        """Set up cgroups for the container process.
+
+        This method creates the necessary cgroup for the container process
+        and sets memory limits using cgroups v2.
+        """
+        if not self._container_pid:
+            raise ValueError("Container process not created yet.")
+
+        if not self._memory_limit:
+            logger.info("No memory limit set, skipping cgroup setup")
+            return
+
+        logger.info(f"Setting up cgroups v2 for container PID {self._container_pid}")
+
+        cgroup_path = f"/sys/fs/cgroup/minicon_{self._container_pid}"
+        try:
+            os.makedirs(cgroup_path, exist_ok=True)
+
+            parent_controllers_path = "/sys/fs/cgroup/cgroup.subtree_control"
+            with open(parent_controllers_path, "r") as f:
+                current_controllers = f.read()
+
+            if "+memory" not in current_controllers:
+                try:
+                    with open(parent_controllers_path, "w") as f:
+                        f.write("+memory")
+                    logger.info("Enabled memory controller in parent cgroup")
+                except Exception as e:
+                    logger.warning(f"Could not enable memory controller: {e}")
+
+            with open(f"{cgroup_path}/memory.max", "w") as f:
+                f.write(str(self._memory_limit))
+
+            with open(f"{cgroup_path}/cgroup.procs", "w") as f:
+                f.write(str(self._container_pid))
+
+            logger.info(
+                f"Container process {self._container_pid} added to "
+                f"cgroup with memory limit {self._memory_limit} bytes"
+            )
+        except Exception as e:
+            logger.error(f"Failed to set up cgroups: {e}")
 
     def _container_entry_point(self) -> int:
-        raise NotImplementedError
+        """Entry point for the container process.
+
+        This method is executed in the child process after fork. It:
+        1. Applies namespace isolation (chroot, hostname, etc.)
+        2. Drops privileges if necessary
+        3. Executes the container command
+
+        Returns:
+            The exit code of the container process.
+        """
+        if not self._command:
+            raise ValueError("Command not set for container. Call configure() first.")
+
+        try:
+            self._apply_isolation()
+
+            if self._user_handler.user_id is not None:
+                self._user_handler.drop_privileges()
+
+            logger.info(f"Executing container command: {self._command}")
+
+            os.execvp(self._command[0], self._command)
+
+            logger.error("Failed to execute container command")
+            return 1
+        except Exception as e:
+            logger.error(f"Error in container process: {e}")
+            return 1
 
     def _handle_child_exit(self, status: int) -> None:
-        raise NotImplementedError
+        """Handle the exit of the child process.
+
+        This method extracts the exit code from the status and
+        updates the internal state.
+
+        Args:
+            status: The exit status of the child process.
+        """
+        if os.WIFEXITED(status):
+            self._exit_code = os.WEXITSTATUS(status)
+            logger.info(f"Container process exited with code {self._exit_code}")
+        elif os.WIFSIGNALED(status):
+            signal_num = os.WTERMSIG(status)
+            self._exit_code = 128 + signal_num
+            logger.info(f"Container process terminated by signal {signal_num}")
+        else:
+            self._exit_code = -1
+            logger.warning("Container process exited abnormally")

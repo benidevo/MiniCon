@@ -1,11 +1,14 @@
 """Namespace orchestrator for MiniCon."""
 
-from typing import List, Tuple
+import logging
+from typing import List, Optional, Tuple
 
 from src.namespace.handlers.mount_namespace import MountNamespaceHandler
 from src.namespace.handlers.pid_namespace import PidNamespaceHandler
 from src.namespace.handlers.user_namespace import UserNamespaceHandler
 from src.namespace.handlers.uts_namespace import UtsNamespaceHandler
+
+logger = logging.getLogger(__name__)
 
 
 class NamespaceOrchestrator:
@@ -51,13 +54,13 @@ class NamespaceOrchestrator:
         self._uts_handler = UtsNamespaceHandler()
         self._user_handler = UserNamespaceHandler()
 
-        self._root_fs = None
-        self._host_name = None
-        self._command = None
-        self._memory_limit = None
+        self._root_fs: Optional[str] = None
+        self._host_name: Optional[str] = None
+        self._command: Optional[list[str]] = None
+        self._memory_limit: Optional[int] = None
 
-        self._container_pid = None
-        self._exit_code = None
+        self._container_pid: Optional[int] = None
+        self._exit_code: Optional[int] = None
 
     def configure(
         self,
@@ -87,9 +90,32 @@ class NamespaceOrchestrator:
         Returns:
             None
         """
-        raise NotImplementedError
+        self._root_fs = root_fs
+        self._hostname = hostname
+        self._command = command
+        self._memory_limit = memory_limit
 
-    def set_cgroup_settings(self, memory_limit: int, cpu_shares: int) -> None:
+        self._mount_handler.set_root_fs(self._root_fs)
+        self._uts_handler.set_hostname(self._hostname)
+
+        for inside_uid, outside_uid, count in gid_map:
+            self._user_handler.add_gid_mapping(inside_uid, outside_uid, count)
+
+        for inside_gid, outside_gid, count in gid_map:
+            self._user_handler.add_gid_mapping(inside_gid, outside_gid, count)
+
+        if uid_map and gid_map:
+            inside_uid, _, _ = uid_map[0]
+            inside_gid, _, _ = gid_map[0]
+            self._user_handler.set_user(inside_uid, inside_gid)
+
+        logger.info(
+            f"Configured container with root_fs: {self._root_fs}, hostname: "
+            f"{self._hostname}, command: {self._command}, memory_limit: "
+            f"{self._memory_limit}"
+        )
+
+    def set_cgroup_settings(self, memory_limit: int, cpu_shares: int = 1024) -> None:
         """Set cgroup settings for memory and CPU resources.
 
         This method sets the memory limit and CPU shares for the container
@@ -98,23 +124,44 @@ class NamespaceOrchestrator:
         Args:
             memory_limit: The memory limit in bytes for the container process.
             cpu_shares: The relative CPU share for the container process.
+                    Default is 1024, which means 100% of one CPU core.
 
         Returns:
             None
         """
-        raise NotImplementedError
+        self._memory_limit = memory_limit
+        self._cpu_shares = cpu_shares
+
+        logger.info(
+            f"Set cgroup settings with memory_limit: {self._memory_limit}, "
+            f"cpu_shares: {self._cpu_shares}"
+        )
 
     def setup_namespaces(self) -> None:
         """Set up the namespaces for the container.
 
-        This method sets up the necessary namespaces (mount, UTS, PID, network,
-        user, and IPC) for the container. It calls the setup method of each
-        namespace handler to perform the necessary setup.
+        This method sets up the necessary namespaces (mount, UTS, PID, user)
+        for the container. It calls the setup method of each namespace handler
+        to perform the necessary setup.
 
         Returns:
             None
         """
-        raise NotImplementedError
+        logger.info("Setting up namespaces...")
+
+        try:
+            self._user_handler.setup()
+            self._mount_handler.setup()
+            self._uts_handler.setup()
+            self._pid_handler.setup()
+        except OSError as e:
+            logger.error(f"Failed to setup namespaces: {e}")
+            raise RuntimeError(f"Failed to setup namespaces: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error occurred while setting up namespaces: {e}")
+            raise
+
+        logger.info("Namespaces setup completed successfully.")
 
     def create_container_process(self) -> int:
         """Create the container process and return its PID.

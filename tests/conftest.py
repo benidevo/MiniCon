@@ -7,6 +7,7 @@ import pytest
 
 from src.container.model import Container
 from src.container.registry import ContainerRegistry
+from src.namespace.orchestrator import NamespaceOrchestrator
 
 ONE_HUNDRED_MEGABYTES = 100 * 1024 * 1024
 
@@ -66,3 +67,22 @@ def mock_libc_unshare():
         mock_libc.unshare.return_value = 0
         mock_cdll.return_value = mock_libc
         yield mock_libc
+
+
+@pytest.fixture
+def orchestrator():
+    return NamespaceOrchestrator()
+
+
+@pytest.fixture
+def configured_orchestrator():
+    orchestrator = NamespaceOrchestrator()
+    orchestrator.configure(
+        root_fs="/var/lib/minicon/rootfs/test",
+        hostname="test-container",
+        command=["python", "-m", "http.server"],
+        memory_limit=100 * 1024 * 1024,
+        uid_map=[(0, 1000, 1)],
+        gid_map=[(0, 1000, 1)],
+    )
+    return orchestrator

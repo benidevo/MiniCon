@@ -26,3 +26,5 @@ test-coverage:
 	poetry run pytest --cov=src tests/
 
 check-all: format lint test
+
+.PHONY: run enter stop setup-dev format lint test test-coverage check-all

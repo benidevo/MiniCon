@@ -1,6 +1,6 @@
 # MiniCon
 
-**MiniCon** is a lightweight container implementation in Python that demonstrates core virtualization concepts from "Operating Systems: Three Easy Pieces". This project is designed for **educational purposes only** to help understand the underlying mechanisms of containers.
+**MiniCon** is a lightweight container implementation in Python that demonstrates core virtualization concepts from ["Operating Systems: Three Easy Pieces" by Remzi H. Arpaci-Dusseau and Andrea C. Arpaci-Dusseau](https://pages.cs.wisc.edu/~remzi/OSTEP/). This project is designed for **educational purposes only** to help understand the underlying mechanisms of containers.
 
 ## ⚠️ Work in Progress
 
@@ -50,8 +50,8 @@ make test
 
 - [x] Project structure
 - [x] Container model and registry
-- [ ] Namespace isolation implementations
-- [ ] Resource constraints
+- [x] Namespace isolation implementations
+- [x] Resource constraints
 - [ ] Command-line interface
 - [ ] Container filesystem setup
 - [ ] Demo application (Python HTTP server)

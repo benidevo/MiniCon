@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 
+from src.container.manager import ContainerManager
 from src.container.model import Container
 from src.container.registry import ContainerRegistry
 from src.namespace.orchestrator import NamespaceOrchestrator
@@ -86,3 +87,25 @@ def configured_orchestrator():
         gid_map=[(0, 1000, 1)],
     )
     return orchestrator
+
+
+@pytest.fixture
+def mock_orchestrator():
+    mock_orch = MagicMock(spec=NamespaceOrchestrator)
+    mock_orch.create_container_process.return_value = 12345
+
+    mock_orch.setup_namespaces.return_value = None
+    return mock_orch
+
+
+@pytest.fixture
+def manager(mock_registry_file):
+    with (
+        patch("os.makedirs"),
+        patch("os.path.exists", return_value=True),
+        patch("os.path.isdir", return_value=True),
+        patch("os.system"),
+        patch("src.container.registry.ContainerRegistry._save_to_file"),
+    ):
+        manager = ContainerManager()
+        yield manager

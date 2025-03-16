@@ -15,28 +15,23 @@ logger = logging.getLogger(__name__)
 
 
 class NamespaceOrchestrator:
-    """Orchestrates the creation and configuration of a container.
+    """A class that orchestrates namespace isolation for containers.
 
-    This class provides a high-level interface for managing the creation and
-    execution of a container. It abstracts away the low-level details of
-    setting up namespace isolations, configuring resource limits,
-    and handling container process lifecycle events.
+    The NamespaceOrchestrator coordinates the setup and management of Linux namespaces
+    for container isolation. It handles PID, mount, UTS, and user namespaces to provide
+    process, filesystem, hostname, and user isolation respectively.
 
     Attributes:
-        _pid_handler (PidNamespaceHandler): A handler for managing PID
-            namespace isolation.
-        _mount_handler (MountNamespaceHandler): A handler for managing mount
-            namespace isolation.
-        _uts_handler (UtsNamespaceHandler): A handler for managing UTS
-            namespace isolation.
-        _user_handler (UserNamespaceHandler): A handler for managing user
-            namespace isolation.
-        _root_fs (str): The root filesystem for the container.
-        _host_name (str): The hostname for the container.
-        _command (list[str]): The command to execute in the container.
-        _memory_limit (int): The memory limit for the container.
-        _container_pid (int): The PID of the container process.
-        _exit_code (int): The exit code of the container process.
+        _pid_handler: Handler for PID namespace isolation
+        _mount_handler: Handler for mount namespace isolation
+        _uts_handler: Handler for UTS (hostname) namespace isolation
+        _user_handler: Handler for user namespace isolation
+        _root_fs: Path to container root filesystem
+        _host_name: Container hostname
+        _command: Command to run in container
+        _memory_limit: Memory limit in bytes
+        _container_pid: PID of container process
+        _exit_code: Container exit code
     """
 
     def __init__(self) -> None:

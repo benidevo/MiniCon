@@ -3,7 +3,8 @@
 import json
 import logging
 import os
-from typing import Any, Dict, List, Optional
+from datetime import datetime
+from typing import Optional
 
 from src.container.model import Container, State
 
@@ -36,7 +37,7 @@ class ContainerRegistry:
                 container metadata. Defaults to"containers.json".
         """
         self._registry_file = registry_file
-        self._containers: Dict[str, Container] = {}
+        self._containers: dict[str, Container] = {}
         self.load_containers()
 
     def load_containers(self) -> None:
@@ -88,17 +89,26 @@ class ContainerRegistry:
         """
         return self._containers.get(container_id)
 
-    def get_all_containers(self) -> List[Container]:
-        """Retrieve all containers in the registry.
+    def get_all_containers(self, state: Optional[State] = None) -> list[Container]:
+        """Retrieves all containers, optionally filtered by state.
+
+        This method returns a list of all containers in the registry. If a state
+        is specified, only containers in that state are returned.
+
+        Args:
+            state: Optional state to filter containers by. If None, all containers
+                are returned regardless of state.
 
         Returns:
-            A list of all containers in the registry, or an empty list if
-            there are no containers in the registry.
+            A list of Container objects, optionally filtered by state.
         """
-        return list(self._containers.values())
+        containers = list(self._containers.values())
+        if state:
+            return [container for container in containers if container.state == state]
+        return containers
 
     def update_container_state(
-        self, container_id: str, new_state: State, **kwargs: Dict[str, Any]
+        self, container_id: str, new_state: State, **kwargs: str | int
     ) -> bool:
         """Updates a container's state and saves the registry.
 
@@ -116,6 +126,11 @@ class ContainerRegistry:
 
         container = self._containers[container_id]
         container.state = new_state
+        if new_state == State.RUNNING:
+            container.started_at = datetime.now()
+        elif new_state == State.EXITED:
+            container.exited_at = datetime.now()
+            container.exit_code = int(kwargs.get("exit_code", 0))
 
         for key, value in kwargs.items():
             if hasattr(container, key):

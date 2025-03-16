@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 class PidNamespaceHandler(NamespaceHandler):
     """Handler for PID namespace isolation.
 
-     This handler is responsible for creating a new PID namespace
+    This handler is responsible for creating a new PID namespace
     for the container, allowing processes inside to have their own
     isolated process ID space.
     """

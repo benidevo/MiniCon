@@ -66,3 +66,12 @@ class UtsNamespaceHandler(NamespaceHandler):
             None
         """
         self._hostname = hostname
+
+    @property
+    def hostname(self) -> Optional[str]:
+        """Get the hostname for the container.
+
+        Returns:
+            The hostname for the container.
+        """
+        return self._hostname

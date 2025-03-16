@@ -42,13 +42,13 @@ class Container:
 
     name: str
     id: str
-    process_id: Optional[int]
     command: List[str]
     root_fs: str
     hostname: str
     memory_limit: int
+    process_id: Optional[int] = None
     state: State = State.CREATED
-    exit_code: Optional[int] = None
+    exit_code: int = 0
     created_at: datetime = datetime.now()
     started_at: Optional[datetime] = None
     exited_at: Optional[datetime] = None

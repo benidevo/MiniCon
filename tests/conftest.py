@@ -38,10 +38,10 @@ def registry_file_content(sample_container):
             "hostname": "another-container",
             "memory_limit": 1024 * 1024 * 200,
             "state": "running",
-            "exit_code": None,
+            "exit_code": 0,
             "created_at": "2023-01-02T12:00:00",
             "started_at": "2023-01-02T12:01:00",
-            "exited_at": None,
+            "exited_at": 0,
         },
     }
 

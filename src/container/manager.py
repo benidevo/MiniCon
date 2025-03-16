@@ -1,6 +1,17 @@
 """Container manager."""
 
+import logging
+import os
+import uuid
+from typing import Optional
+
+from src.container.model import Container, State
 from src.container.registry import ContainerRegistry
+from src.namespace.orchestrator import NamespaceOrchestrator
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_MEMORY_LIMIT = 250 * 1024 * 1024  # 250MB
 
 
 class ContainerManager:
@@ -16,61 +27,191 @@ class ContainerManager:
             container information.
     """
 
+    _orchestrator_class: type[NamespaceOrchestrator] = NamespaceOrchestrator
+    _container_class: type[Container] = Container
+
     def __init__(self) -> None:
         """Initialize a ContainerManager instance.
 
         This method initializes the container manager by creating an instance
         of the ContainerRegistry class.
         """
-        self.registry = ContainerRegistry()
+        self.registry: ContainerRegistry = ContainerRegistry()
+        self._orchestrators: dict[str, NamespaceOrchestrator] = {}
 
-    def create(self) -> None:
+    def create(
+        self, name: str, command: list[str], memory_limit: int = DEFAULT_MEMORY_LIMIT
+    ) -> str:
         """Create a new container.
 
-        This method creates a new container and adds it to the registry.
+        This method creates a new container with the specified name,
+        command, and memory limit. It generates a unique ID for the container,
+        prepares the root filesystem, and registers the container in the registry.
+
+        Args:
+            name: The human-readable name for the container.
+            command: A list of strings representing the command and its
+                arguments to run in the container.
+            memory_limit: The memory limit in bytes for the container.
+                Defaults to DEFAULT_MEMORY_LIMIT.
+
+        Returns:
+            The unique identifier (ID) of the created container.
         """
-        pass
+        container_id = str(uuid.uuid4())[:8]
+        root_fs_path = self._prepare_root_fs(container_id)
+        container = self._container_class(
+            id=container_id,
+            name=name,
+            command=command,
+            hostname=name,
+            memory_limit=memory_limit,
+            root_fs=root_fs_path,
+        )
+        self.registry.save_container(container)
+        return container_id
 
     def start(self, container_id: str) -> None:
         """Start a container.
 
         This method starts a container by its ID, transitioning it to the running state.
-        It retrieves the container from the registry and updates its state.
+        It retrieves the container from the registry, creates a namespace orchestrator,
+        configures it with the container's settings, and starts the container process.
 
         Args:
             container_id: The unique identifier of the container to start.
-        """
-        pass
 
-    def stop(self, container_id: str) -> None:
+        Raises:
+            ValueError: If the container is not found or not in the created state.
+            RuntimeError: If the container fails to start.
+        """
+        container = self.registry.get_container(container_id)
+        if not container:
+            raise ValueError(f"Container {container_id} not found")
+        if container.state != State.CREATED:
+            raise ValueError(f"Container {container_id} is not in the created state")
+
+        orchestrator = self._orchestrator_class()
+        try:
+            orchestrator.configure(
+                root_fs=container.root_fs,
+                hostname=container.hostname,
+                command=container.command,
+                memory_limit=container.memory_limit,
+                uid_map=[(0, os.getuid(), 1)],
+                gid_map=[(0, os.getgid(), 1)],
+            )
+            orchestrator.set_cgroup_settings(
+                memory_limit=container.memory_limit,
+            )
+            pid = orchestrator.create_container_process()
+            kwargs = {"process_id": pid}
+            self.registry.update_container_state(container_id, State.RUNNING, **kwargs)
+            self._orchestrators[container_id] = orchestrator
+        except Exception as e:
+            logger.error(f"Failed to start container {container_id}: {e}")
+            orchestrator.cleanup_resources()
+            raise RuntimeError(f"Failed to start container {container_id}: {e}") from e
+
+    def stop(self, container_id: str) -> bool:
         """Stop a container.
 
-        This method stops a container by its ID, transitioning it to the exited state.
-        It retrieves the container from the registry and updates its state.
+        This method stops a running container by its ID, transitioning it to
+        the exited state.
+        It retrieves the container from the registry, gets the associated orchestrator,
+        and terminates the container process.
 
         Args:
             container_id: The unique identifier of the container to stop.
+
+        Returns:
+            bool: True if the container was successfully stopped.
+
+        Raises:
+            ValueError: If the container is not found, not in the running state,
+                or if the orchestrator for the container is not found.
         """
-        pass
+        container = self.registry.get_container(container_id)
+        if not container:
+            raise ValueError(f"Container {container_id} not found")
+        if container.state != State.RUNNING:
+            raise ValueError(f"Container {container_id} is not in the running state")
+
+        orchestrator = self._orchestrators.get(container_id)
+        if not orchestrator:
+            raise ValueError(f"Orchestrator for container {container_id} not found")
+
+        orchestrator.terminate()
+        self.registry.update_container_state(container_id, State.EXITED)
+        return True
 
     def remove(self, container_id: str) -> None:
-        """Remove a container from the registry.
+        """Remove a container.
 
-        This method removes a container from the registry by its ID. It ensures that
-        the container and its associated metadata are deleted from the registry.
+        This method removes a container from the registry and cleans
+        up any associated resources.
+        If the container is running, it will raise a ValueError.
 
         Args:
             container_id: The unique identifier of the container to remove.
+
+        Raises:
+            ValueError: If the container is not found or if it is still running.
         """
-        pass
+        container = self.registry.get_container(container_id)
+        if not container:
+            raise ValueError(f"Container {container_id} not found")
 
-    def list(self) -> None:
-        """List all containers in the registry.
+        if container.state == State.RUNNING:
+            raise ValueError(
+                f"Cannot remove running container {container_id}. Stop it first."
+            )
+        container = self.registry.get_container(container_id)
+        if not container:
+            raise ValueError(f"Container {container_id} not found")
+        self.registry.remove_container(container_id)
+        orchestrator = self._orchestrators.pop(container_id, None)
+        if orchestrator:
+            orchestrator.cleanup_resources()
 
-        This method retrieves all containers currently stored in the registry
-        and returns them as a list.
+    def list(self, state: Optional[State] = None) -> list[Container]:
+        """List containers, optionally filtered by state.
+
+        This method retrieves all containers from the registry, optionally filtered
+        by their state. It returns a list of Container objects that match the
+        specified criteria.
+
+        Args:
+            state: Optional state to filter containers by. If None, all containers
+                are returned regardless of state.
 
         Returns:
-            A list of all container instances in the registry.
+            A list of Container objects, optionally filtered by state.
         """
-        pass
+        return self.registry.get_all_containers(state)
+
+    def _prepare_root_fs(self, container_id: str) -> str:
+        base_image_path = "/var/lib/minicon/base"
+        root_fs_path = f"/var/lib/minicon/rootfs/{container_id}"
+
+        os.makedirs(root_fs_path, exist_ok=True)
+        if os.path.exists(base_image_path):
+            if os.path.isdir(base_image_path):
+                os.system(f"cp -a {base_image_path}/* {root_fs_path}/")
+            elif os.path.isfile(base_image_path) and base_image_path.endswith(".tar"):
+                os.system(f"tar -xf {base_image_path} -C {root_fs_path}")
+        else:
+            logger.warning(
+                f"Base image not found: {base_image_path}. Creating minimal filesystem."
+            )
+
+        for dir_name in ["proc", "sys", "dev", "tmp", "etc", "bin", "lib", "home"]:
+            os.makedirs(os.path.join(root_fs_path, dir_name), exist_ok=True)
+
+        hosts_file = os.path.join(root_fs_path, "etc/hosts")
+        if not os.path.exists(hosts_file):
+            with open(hosts_file, "w") as _file:
+                _file.write("127.0.0.1 localhost\n")
+                _file.write(f"127.0.0.1 {container_id}\n")
+
+        return root_fs_path

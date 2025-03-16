@@ -17,7 +17,7 @@ def test_should_initialize_with_correct_defaults():
     )
 
     assert container.state == State.CREATED
-    assert container.exit_code is None
+    assert container.exit_code == 0
     assert isinstance(container.created_at, datetime)
     assert container.started_at is None
     assert container.exited_at is None
@@ -42,10 +42,10 @@ def test_should_reconstruct_from_dict_when_deserializing():
         "hostname": "test-container",
         "memory_limit": 1024 * 1024 * 100,
         "state": "running",
-        "exit_code": None,
+        "exit_code": 0,
         "created_at": "2023-01-01T12:00:00",
         "started_at": "2023-01-01T12:01:00",
-        "exited_at": None,
+        "exited_at": 0,
     }
 
     container = Container.from_dict(container_dict)

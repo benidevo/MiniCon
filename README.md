@@ -51,8 +51,8 @@ make test
 - [x] Container model and registry
 - [x] Namespace isolation implementations
 - [x] Resource constraints
+- [x] Container filesystem setup
 - [ ] Command-line interface
-- [ ] Container filesystem setup
 - [ ] Demo application (Python HTTP server)
 
 ## Important Notes

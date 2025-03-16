@@ -2,6 +2,7 @@
 
 import logging
 import os
+import threading
 import uuid
 from typing import Optional
 
@@ -15,29 +16,54 @@ DEFAULT_MEMORY_LIMIT = 250 * 1024 * 1024  # 250MB
 
 
 class ContainerManager:
-    """A class responsible for managing containers.
+    """Container manager for creating, starting, and managing containers.
 
-    The ContainerManager class provides methods for creating, starting,
-    stopping, removing, and listing containers.
-    It uses a ContainerRegistry instance to store and retrieve container
-    information.
+    This class provides methods to create, start, stop, and remove containers.
+    It uses the ContainerRegistry to persist container metadata and the
+    NamespaceOrchestrator to manage container namespaces and processes.
 
     Attributes:
-        registry (ContainerRegistry): The registry used to store and retrieve
-            container information.
+        registry (ContainerRegistry): Registry for persisting container metadata.
+        _orchestrators (dict[str, NamespaceOrchestrator]): Dictionary of orchestrators
+            for running containers, keyed by container ID.
+        _orchestrator_class (type[NamespaceOrchestrator]): Class used to create
+            orchestrator instances.
+        _container_class (type[Container]): Class used to create container instances.
     """
 
     _orchestrator_class: type[NamespaceOrchestrator] = NamespaceOrchestrator
     _container_class: type[Container] = Container
 
     def __init__(self) -> None:
-        """Initialize a ContainerManager instance.
+        """Initialize the container manager.
 
-        This method initializes the container manager by creating an instance
-        of the ContainerRegistry class.
+        This constructor initializes the container manager with a registry for
+        persisting container metadata and a dictionary to track orchestrators
+        for running containers. It also attempts to recover any containers that
+        were previously in the running state.
+
+        The container manager serves as the main interface for creating, starting,
+        stopping, and removing containers in the system.
         """
         self.registry: ContainerRegistry = ContainerRegistry()
         self._orchestrators: dict[str, NamespaceOrchestrator] = {}
+        self._recover_running_containers()
+
+    def _recover_running_containers(self) -> None:
+        running_containers = self.registry.get_all_containers(State.RUNNING)
+        for container in running_containers:
+            if container.process_id and self._is_process_running(container.process_id):
+                self.start(container.id)
+            else:
+                self.registry.update_container_state(container.id, State.EXITED)
+                self._orchestrators.pop(container.id, None)
+
+    def _is_process_running(self, process_id: int) -> bool:
+        try:
+            os.kill(process_id, 0)
+            return True
+        except OSError:
+            return False
 
     def create(
         self, name: str, command: list[str], memory_limit: int = DEFAULT_MEMORY_LIMIT
@@ -74,16 +100,18 @@ class ContainerManager:
     def start(self, container_id: str) -> None:
         """Start a container.
 
-        This method starts a container by its ID, transitioning it to the running state.
-        It retrieves the container from the registry, creates a namespace orchestrator,
-        configures it with the container's settings, and starts the container process.
+        This method starts a container by its ID, transitioning it to the
+        running state. It retrieves the container from the registry,
+        configures a namespace orchestrator, and creates the container process.
+        It also starts a monitoring thread to track the container's lifecycle.
 
         Args:
             container_id: The unique identifier of the container to start.
 
         Raises:
             ValueError: If the container is not found or not in the created state.
-            RuntimeError: If the container fails to start.
+            RuntimeError: If the container fails to start due to configuration or
+                resource allocation issues.
         """
         container = self.registry.get_container(container_id)
         if not container:
@@ -112,6 +140,24 @@ class ContainerManager:
             logger.error(f"Failed to start container {container_id}: {e}")
             orchestrator.cleanup_resources()
             raise RuntimeError(f"Failed to start container {container_id}: {e}") from e
+
+        monitor_thread = threading.Thread(
+            target=self._monitor_container,
+            args=(container_id,),
+            daemon=True,
+        )
+        monitor_thread.start()
+
+    def _monitor_container(self, container_id: str) -> None:
+        orchestrator = self._orchestrators.get(container_id)
+        if not orchestrator:
+            return
+
+        exit_code = orchestrator.wait_for_exit()
+        self.registry.update_container_state(
+            container_id, State.EXITED, exit_code=exit_code
+        )
+        self._orchestrators.pop(container_id, None)
 
     def stop(self, container_id: str) -> bool:
         """Stop a container.

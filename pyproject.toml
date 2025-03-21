@@ -9,6 +9,8 @@ license = {text = "MIT"}
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "typer>=0.15.2",
+    "rich>=13.9.4"
 ]
 
 
@@ -25,6 +27,8 @@ packages = [{include = "src"}]
 
 [tool.poetry.dependencies]
 python = "^3.11"
+typer = "^0.15.2"
+rich = "^13.9.4"
 
 
 [project.optional-dependencies]
@@ -79,6 +83,10 @@ strict_optional = true
 
 
 [[tool.mypy.overrides]]
-module = "tests.*"
+module = ["typer.*", "rich.*", "tests.*"]
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
+
+
+[tool.poetry.scripts]
+minicon = "src.cli:main"

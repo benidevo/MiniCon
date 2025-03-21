@@ -36,7 +36,11 @@ class ContainerRegistry:
             registry_file (str, optional): Path to the JSON file used to store
                 container metadata. Defaults to"containers.json".
         """
-        self._registry_file = registry_file
+        if not os.path.isabs(registry_file):
+            self._registry_file = os.path.join("/var/lib/minicon", registry_file)
+        else:
+            self._registry_file = registry_file
+
         self._containers: dict[str, Container] = {}
         self.load_containers()
 

@@ -237,8 +237,12 @@ class ContainerManager:
         return self.registry.get_all_containers(state)
 
     def _prepare_root_fs(self, container_id: str) -> str:
+        base_dir = "/var/lib/minicon"
         base_image_path = "/var/lib/minicon/base"
         root_fs_path = f"/var/lib/minicon/rootfs/{container_id}"
+
+        os.makedirs(base_dir, exist_ok=True)
+        os.makedirs(root_fs_path, exist_ok=True)
 
         os.makedirs(root_fs_path, exist_ok=True)
         if os.path.exists(base_image_path):

@@ -52,7 +52,7 @@ make test
 - [x] Namespace isolation implementations
 - [x] Resource constraints
 - [x] Container filesystem setup
-- [ ] Command-line interface
+- [x] Command-line interface
 - [ ] Demo application (Python HTTP server)
 
 ## Important Notes

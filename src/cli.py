@@ -234,37 +234,29 @@ class MiniConCLI:
         command: List[str] = typer.Argument(
             ..., help="Command to run in the container"
         ),
-        memory: int = typer.Option(
-            250 * 1024 * 1024,
-            "--memory",
-            "-m",
-            help="Memory limit in bytes (default: 250MB)",
-        ),
     ) -> None:
-        """Run a container with the specified name, command, and memory limit.
+        """Run a new container with the specified name and command.
 
-        This command creates and starts a new container with the given name and command.
-        It allocates the specified amount of memory to the container and runs the
-        command inside the container's isolated environment.
+        This command creates and starts a new container in a single operation.
+        It combines the functionality of the 'create' and 'start' commands.
+        The container is created with the given name and command, and then
+        immediately started. This is useful for quickly running a command
+        in a container without having to separately create and start it.
 
         Args:
-            name: A human-readable name for the container.
+            name: The name to assign to the container for easier identification.
             command: The command and its arguments to run inside the container.
-            memory: Memory limit in bytes for the container. Defaults to 250MB.
 
         Raises:
-            typer.Exit: If the container cannot be created or started due to an error,
-                such as insufficient resources or invalid configuration.
+            typer.Exit: If the container cannot be created or started due to an error.
         """
         self._check_root()
 
         manager = ContainerManager()
 
-        # Create the container
         with self.console.status(f"Creating container {name}..."):
-            container_id = manager.create(name, command, memory)
+            container_id = manager.create(name, command)
 
-        # Start the container
         with self.console.status(f"Starting container {container_id}..."):
             try:
                 manager.start(container_id)

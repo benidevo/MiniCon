@@ -1,30 +1,31 @@
 # MiniCon
 
-**MiniCon** is a lightweight container implementation in Python that demonstrates core virtualization concepts from ["Operating Systems: Three Easy Pieces" by Remzi H. Arpaci-Dusseau and Andrea C. Arpaci-Dusseau](https://pages.cs.wisc.edu/~remzi/OSTEP/). This project is designed for **educational purposes only** to help understand the underlying mechanisms of containers.
+**MiniCon** is a lightweight container implementation in Python that demonstrates core virtualization concepts from ["Operating Systems: Three Easy Pieces" by Remzi H. Arpaci-Dusseau and Andrea C. Arpaci-Dusseau](https://pages.cs.wisc.edu/~remzi/OSTEP/) to help understand the underlying mechanisms of containers.
 
-## ⚠️ Work in Progress
+## ⚠️ Not for Production
 
-This project is currently under active development and is not intended for production use. Many core features are still being implemented.
+This project is **not intended for production use**. It demonstrates container fundamentals with security best practices for safe learning environments.
 
 ## Overview
 
 MiniCon provides a minimal container runtime that focuses on:
 
-- Process isolation using Linux namespaces
-- Filesystem isolation with mount namespaces
-- Resource constraints using cgroups
-- Simple container lifecycle management
+- **Process isolation** using Linux namespaces (PID, Mount, UTS, User)
+- **Filesystem isolation** with secure mount operations
+- **Resource constraints** using cgroups
+- **Secure container lifecycle management** with input validation
+- **Clean architecture** for understanding container internals
 
-## Educational Objectives
+## Learning Objectives
 
-This project aims to provide hands-on experience with:
+This project provides hands-on experience with:
 
-- PID namespace isolation
-- Mount namespace isolation
-- UTS namespace isolation
-- Filesystem containerization
-- Basic resource limiting
-- Container state management
+- **Linux namespace types**: PID, Mount, UTS, and User namespaces
+- **Secure containerization**: Input validation and safe system operations
+- **Filesystem isolation**: chroot and mount namespace management
+- **Resource management**: Memory limits and cgroup controls
+- **Container lifecycle**: Creation, execution, monitoring, and cleanup
+- **Security principles**: Preventing shell injection and path traversal attacks
 
 ## Requirements
 
@@ -32,31 +33,70 @@ This project aims to provide hands-on experience with:
 - Python 3.11+
 - Root privileges (for namespace operations)
 
-## Development
+## Installation & Usage
+
+### Basic Setup
 
 ```bash
-# Setup the development environment
-make setup-dev
+# Install dependencies
+poetry install
 
-# Run formatter and linter
-make check-all
-
-# Run tests
-make test
+# Run MiniCon CLI
+poetry run python -m src.cli --help
 ```
 
-## Status
+### Development Commands
 
-- [x] Project structure
-- [x] Container model and registry
-- [x] Namespace isolation implementations
-- [x] Resource constraints
-- [x] Container filesystem setup
-- [x] Command-line interface
-- [ ] Demo application (Python HTTP server)
+```bash
+# Setup development environment
+make setup-dev
 
-## Important Notes
+# Code quality checks
+make format    # Format code with black and isort
+make lint      # Run flake8 and mypy
 
-This project is inspired by the concepts presented in ["Operating Systems: Three Easy Pieces" by Remzi H. Arpaci-Dusseau and Andrea C. Arpaci-Dusseau](https://pages.cs.wisc.edu/~remzi/OSTEP/). It is not intended for production use and lacks many security features present in production container runtimes.
+# Run test suite
+make test      # Run all tests with pytest
+```
 
-**Platform Limitation:** MiniCon relies heavily on Linux-specific kernel features such as namespaces and cgroups. It is NOT cross-platform and will only work on Linux systems.
+### Example Usage
+
+```bash
+# Create a container
+sudo poetry run python -m src.cli create my-container /bin/bash
+
+# Start the container
+sudo poetry run python -m src.cli start <container-id>
+
+# List containers
+sudo poetry run python -m src.cli list
+```
+
+## Features
+
+- **Core Architecture**: Container model, registry, and namespace orchestration
+- **Security Hardening**: Input validation, secure command execution, path sanitization
+- **Namespace Isolation**: PID, Mount, UTS, and User namespace implementations
+- **Resource Management**: Memory limits via cgroups
+- **Container Lifecycle**: Create, start, stop, remove operations
+- **CLI Interface**: Full command-line interface with comprehensive error handling
+- **Testing Suite**: Unit tests, integration tests, and security validation tests
+- **Code Quality**: Linting, formatting, type checking, and configuration management
+
+## Security & Safety
+
+MiniCon implements several security measures for safe learning environments:
+
+- **Input Validation**: Container names and commands are validated to prevent injection attacks
+- **Path Sanitization**: All filesystem operations use secure path validation
+- **Command Safety**: Dangerous system commands are blocked by default
+- **Secure Execution**: Uses `subprocess` instead of shell execution to prevent command injection
+- **Resource Limits**: Memory constraints prevent resource exhaustion
+
+## Configuration
+
+MiniCon uses environment variables for configuration:
+
+- `MINICON_BASE_DIR`: Base directory for container data (default: `/var/lib/minicon`)
+- `MINICON_MEMORY_LIMIT`: Default memory limit in bytes (default: 250MB)
+- `MINICON_REGISTRY_FILE`: Container registry filename (default: `containers.json`)

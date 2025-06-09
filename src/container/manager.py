@@ -6,13 +6,25 @@ import threading
 import uuid
 from typing import Optional
 
+from src.constants import (
+    ESSENTIAL_DIRECTORIES,
+    MINICON_BASE_DIR,
+    MINICON_BASE_IMAGE,
+    MINICON_MEMORY_LIMIT,
+    MINICON_ROOTFS_DIR,
+)
 from src.container.model import Container, State
 from src.container.registry import ContainerRegistry
 from src.namespace.orchestrator import NamespaceOrchestrator
+from src.utils.security import (
+    SecurityError,
+    safe_copy_directory,
+    safe_extract_tar,
+    validate_command,
+    validate_container_name,
+)
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_MEMORY_LIMIT = 250 * 1024 * 1024  # 250MB
 
 
 class ContainerManager:
@@ -66,7 +78,7 @@ class ContainerManager:
             return False
 
     def create(
-        self, name: str, command: list[str], memory_limit: int = DEFAULT_MEMORY_LIMIT
+        self, name: str, command: list[str], memory_limit: int = MINICON_MEMORY_LIMIT
     ) -> str:
         """Create a new container.
 
@@ -79,11 +91,21 @@ class ContainerManager:
             command: A list of strings representing the command and its
                 arguments to run in the container.
             memory_limit: The memory limit in bytes for the container.
-                Defaults to DEFAULT_MEMORY_LIMIT.
+                Defaults to MINICON_MEMORY_LIMIT.
 
         Returns:
             The unique identifier (ID) of the created container.
+
+        Raises:
+            ValueError: If name or command validation fails.
+            SecurityError: If security validation fails.
         """
+        if not validate_container_name(name):
+            raise ValueError(f"Invalid container name: {name}")
+
+        if not validate_command(command):
+            raise ValueError(f"Invalid or dangerous command: {command}")
+
         container_id = str(uuid.uuid4())[:8]
         root_fs_path = self._prepare_root_fs(container_id)
         container = self._container_class(
@@ -237,25 +259,33 @@ class ContainerManager:
         return self.registry.get_all_containers(state)
 
     def _prepare_root_fs(self, container_id: str) -> str:
-        base_dir = "/var/lib/minicon"
-        base_image_path = "/var/lib/minicon/base"
-        root_fs_path = f"/var/lib/minicon/rootfs/{container_id}"
+        base_dir = MINICON_BASE_DIR
+        base_image_path = MINICON_BASE_IMAGE
+        root_fs_path = f"{MINICON_ROOTFS_DIR}/{container_id}"
 
         os.makedirs(base_dir, exist_ok=True)
         os.makedirs(root_fs_path, exist_ok=True)
 
-        os.makedirs(root_fs_path, exist_ok=True)
         if os.path.exists(base_image_path):
-            if os.path.isdir(base_image_path):
-                os.system(f"cp -a {base_image_path}/* {root_fs_path}/")
-            elif os.path.isfile(base_image_path) and base_image_path.endswith(".tar"):
-                os.system(f"tar -xf {base_image_path} -C {root_fs_path}")
+            try:
+                if os.path.isdir(base_image_path):
+                    safe_copy_directory(base_image_path, root_fs_path)
+                elif os.path.isfile(base_image_path) and base_image_path.endswith(
+                    ".tar"
+                ):
+                    safe_extract_tar(base_image_path, root_fs_path)
+            except SecurityError as e:
+                logger.error(f"Security error preparing root filesystem: {e}")
+                raise
+            except Exception as e:
+                logger.error(f"Failed to prepare base filesystem: {e}")
+                # Continue with minimal filesystem creation
         else:
             logger.warning(
                 f"Base image not found: {base_image_path}. Creating minimal filesystem."
             )
 
-        for dir_name in ["proc", "sys", "dev", "tmp", "etc", "bin", "lib", "home"]:
+        for dir_name in ESSENTIAL_DIRECTORIES:
             os.makedirs(os.path.join(root_fs_path, dir_name), exist_ok=True)
 
         hosts_file = os.path.join(root_fs_path, "etc/hosts")

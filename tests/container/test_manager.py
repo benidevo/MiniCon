@@ -24,14 +24,15 @@ def test_should_prepare_rootfs_during_container_creation(manager):
     with (
         patch("uuid.uuid4", return_value="abcdef1234567890"),
         patch("os.makedirs") as mock_makedirs,
-        patch("os.system") as mock_system,
+        patch("os.path.exists", return_value=True),
+        patch("os.path.isdir", return_value=True),
+        patch("src.container.manager.safe_copy_directory") as mock_safe_copy,
     ):
         container_id = manager.create("test-container", ["python", "-m", "http.server"])
 
         mock_makedirs.assert_called()
-
-        mock_system.assert_called_with(
-            f"cp -a /var/lib/minicon/base/* /var/lib/minicon/rootfs/{container_id}/"
+        mock_safe_copy.assert_called_once_with(
+            "/var/lib/minicon/base", f"/var/lib/minicon/rootfs/{container_id}"
         )
 
         container = manager.registry.get_container(container_id)

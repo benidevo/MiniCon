@@ -6,6 +6,7 @@ import os
 from datetime import datetime
 from typing import Optional
 
+from src.constants import MINICON_BASE_DIR, MINICON_REGISTRY_FILE
 from src.container.model import Container, State
 
 logger = logging.getLogger(__name__)
@@ -20,7 +21,7 @@ class ContainerRegistry:
 
     Args:
         registry_file (str, optional): Path to the JSON file used to store
-            container metadata. Defaults to"containers.json".
+            container metadata. Defaults to MINICON_REGISTRY_FILE.
 
     Attributes:
         _registry_file (str): Path to the JSON file used to store container
@@ -29,15 +30,15 @@ class ContainerRegistry:
             by container ID.
     """
 
-    def __init__(self, registry_file: str = "containers.json"):
+    def __init__(self, registry_file: str = MINICON_REGISTRY_FILE):
         """Initializes the container registry.
 
         Args:
             registry_file (str, optional): Path to the JSON file used to store
-                container metadata. Defaults to"containers.json".
+                container metadata. Defaults to MINICON_REGISTRY_FILE.
         """
         if not os.path.isabs(registry_file):
-            self._registry_file = os.path.join("/var/lib/minicon", registry_file)
+            self._registry_file = os.path.join(MINICON_BASE_DIR, registry_file)
         else:
             self._registry_file = registry_file
 

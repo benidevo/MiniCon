@@ -5,9 +5,8 @@ import logging
 import os
 from typing import List, Optional, Tuple
 
+from src.constants import CLONE_NEWUSER
 from src.namespace.handlers import NamespaceHandler
-
-CLONE_NEWUSER = 0x10000000
 
 logger = logging.getLogger(__name__)
 

@@ -4,9 +4,8 @@ import ctypes
 import logging
 import os
 
+from src.constants import CLONE_NEWPID
 from src.namespace.handlers import NamespaceHandler
-
-CLONE_NEWPID = 0x20000000
 
 logger = logging.getLogger(__name__)
 

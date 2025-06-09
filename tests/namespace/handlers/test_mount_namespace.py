@@ -1,5 +1,6 @@
 """Tests for the MountNamespaceHandler class."""
 
+import sys
 from unittest.mock import call, patch
 
 import pytest
@@ -77,6 +78,7 @@ def test_should_raise_error_when_applying_mount_isolation_without_root_fs():
         handler.apply_mount_isolation()
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="Requires Linux")
 def test_should_apply_mount_isolation_correctly():
     handler = MountNamespaceHandler()
     test_root_fs = "/var/lib/minicon/rootfs/test123"
@@ -101,6 +103,7 @@ def test_should_apply_mount_isolation_correctly():
         mock_mkdir.assert_called_once_with("/proc")
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="Requires Linux")
 def test_should_not_create_proc_if_already_exists():
     handler = MountNamespaceHandler()
     test_root_fs = "/var/lib/minicon/rootfs/test123"

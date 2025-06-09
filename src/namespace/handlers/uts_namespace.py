@@ -5,9 +5,9 @@ import logging
 import os
 from typing import Optional
 
+from src.constants import CLONE_NEWUTS
 from src.namespace.handlers import NamespaceHandler
-
-CLONE_NEWUTS = 0x04000000
+from src.utils.security import SecurityError, safe_set_hostname
 
 logger = logging.getLogger(__name__)
 
@@ -48,13 +48,23 @@ class UtsNamespaceHandler(NamespaceHandler):
         """Apply UTS isolation by changing hostname.
 
         This should be called in the child process after fork.
+
+        Raises:
+            ValueError: If hostname not set.
+            SecurityError: If hostname validation fails.
         """
         if not self._hostname:
             raise ValueError("Hostname not set.")
 
-        os.system(f"hostname {self._hostname}")
-
-        logger.info(f"UTS isolation applied to {self._hostname}")
+        try:
+            safe_set_hostname(self._hostname)
+            logger.info(f"UTS isolation applied to {self._hostname}")
+        except SecurityError as e:
+            logger.error(f"Security error setting hostname: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to set hostname: {e}")
+            raise
 
     def set_hostname(self, hostname: str) -> None:
         """Set the hostname for the container.

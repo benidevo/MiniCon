@@ -5,9 +5,9 @@ import logging
 import os
 from typing import Optional
 
+from src.constants import CLONE_NEWNS
 from src.namespace.handlers import NamespaceHandler
-
-CLONE_NEWNS = 0x00020000
+from src.utils.security import SecurityError, safe_make_mount_private, safe_mount_proc
 
 logger = logging.getLogger(__name__)
 
@@ -49,22 +49,33 @@ class MountNamespaceHandler(NamespaceHandler):
         """Apply mount isolation by changing root and mounting proc.
 
         This should be called in the child process after fork.
+
+        Raises:
+            ValueError: If root filesystem not set.
+            SecurityError: If security validation fails.
         """
         if not self._root_fs:
             raise ValueError("Root filesystem not set.")
 
-        os.system("mount --make-private /")
+        try:
+            safe_make_mount_private()
 
-        os.chroot(self._root_fs)
-        os.chdir("/")
+            os.chroot(self._root_fs)
+            os.chdir("/")
 
-        proc_path = "/proc"
-        if not os.path.exists(proc_path):
-            os.mkdir(proc_path)
+            proc_path = "/proc"
+            if not os.path.exists(proc_path):
+                os.mkdir(proc_path)
 
-        os.system(f"mount -t proc proc {proc_path}")
+            safe_mount_proc(proc_path)
 
-        logger.info(f"Mount isolation applied to {self._root_fs}, proc mounted.")
+            logger.info(f"Mount isolation applied to {self._root_fs}, proc mounted.")
+        except SecurityError as e:
+            logger.error(f"Security error during mount isolation: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to apply mount isolation: {e}")
+            raise
 
     @property
     def root_fs(self) -> Optional[str]:

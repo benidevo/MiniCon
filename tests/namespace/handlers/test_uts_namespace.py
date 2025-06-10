@@ -1,6 +1,5 @@
 """Tests for the UtsNamespaceHandler class."""
 
-import sys
 from unittest.mock import patch
 
 import pytest
@@ -78,24 +77,26 @@ def test_should_raise_error_when_applying_uts_isolation_without_hostname():
         handler.apply_uts_isolation()
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="Requires Linux")
 def test_should_apply_uts_isolation_correctly():
     handler = UtsNamespaceHandler()
     test_hostname = "container-test"
     handler.set_hostname(test_hostname)
 
-    with patch("os.system") as mock_system:
+    with patch(
+        "src.namespace.handlers.uts_namespace.safe_set_hostname"
+    ) as mock_safe_hostname:
         handler.apply_uts_isolation()
 
-        mock_system.assert_called_once_with(f"hostname {test_hostname}")
+        mock_safe_hostname.assert_called_once_with(test_hostname)
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="Requires Linux")
-def test_should_use_os_sethostname_when_applying_uts_isolation():
+def test_should_use_safe_set_hostname_when_applying_uts_isolation():
     handler = UtsNamespaceHandler()
     test_hostname = "container-test"
     handler.set_hostname(test_hostname)
 
-    with patch("os.system") as mock_system:
+    with patch(
+        "src.namespace.handlers.uts_namespace.safe_set_hostname"
+    ) as mock_safe_hostname:
         handler.apply_uts_isolation()
-        mock_system.assert_called_once()
+        mock_safe_hostname.assert_called_once_with(test_hostname)

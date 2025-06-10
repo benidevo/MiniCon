@@ -1,7 +1,6 @@
 """Tests for the MountNamespaceHandler class."""
 
-import sys
-from unittest.mock import call, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -78,50 +77,60 @@ def test_should_raise_error_when_applying_mount_isolation_without_root_fs():
         handler.apply_mount_isolation()
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="Requires Linux")
 def test_should_apply_mount_isolation_correctly():
     handler = MountNamespaceHandler()
     test_root_fs = "/var/lib/minicon/rootfs/test123"
     handler.set_root_fs(test_root_fs)
 
     with (
-        patch("os.system") as mock_system,
-        patch("os.chroot") as mock_chroot,
-        patch("os.chdir") as mock_chdir,
-        patch("os.path.exists", return_value=False) as mock_exists,
-        patch("os.mkdir") as mock_mkdir,
+        patch(
+            "src.namespace.handlers.mount_namespace.safe_make_mount_private"
+        ) as mock_safe_private,
+        patch(
+            "src.namespace.handlers.mount_namespace.safe_mount_proc"
+        ) as mock_safe_mount,
+        patch("src.namespace.handlers.mount_namespace.os.chroot") as mock_chroot,
+        patch("src.namespace.handlers.mount_namespace.os.chdir") as mock_chdir,
+        patch(
+            "src.namespace.handlers.mount_namespace.os.path.exists", return_value=False
+        ) as mock_exists,
+        patch("src.namespace.handlers.mount_namespace.os.mkdir") as mock_mkdir,
     ):
 
         handler.apply_mount_isolation()
 
-        mock_system.assert_has_calls(
-            [call("mount --make-private /"), call("mount -t proc proc /proc")]
-        )
+        mock_safe_private.assert_called_once()
+        mock_safe_mount.assert_called_once_with("/proc")
         mock_chroot.assert_called_once_with(test_root_fs)
         mock_chdir.assert_called_once_with("/")
         mock_exists.assert_called_once_with("/proc")
         mock_mkdir.assert_called_once_with("/proc")
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="Requires Linux")
 def test_should_not_create_proc_if_already_exists():
     handler = MountNamespaceHandler()
     test_root_fs = "/var/lib/minicon/rootfs/test123"
     handler.set_root_fs(test_root_fs)
 
     with (
-        patch("os.system") as mock_system,
-        patch("os.chroot") as mock_chroot,
-        patch("os.chdir") as mock_chdir,
-        patch("os.path.exists", return_value=True) as mock_exists,
-        patch("os.mkdir") as mock_mkdir,
+        patch(
+            "src.namespace.handlers.mount_namespace.safe_make_mount_private"
+        ) as mock_safe_private,
+        patch(
+            "src.namespace.handlers.mount_namespace.safe_mount_proc"
+        ) as mock_safe_mount,
+        patch("src.namespace.handlers.mount_namespace.os.chroot") as mock_chroot,
+        patch("src.namespace.handlers.mount_namespace.os.chdir") as mock_chdir,
+        patch(
+            "src.namespace.handlers.mount_namespace.os.path.exists", return_value=True
+        ) as mock_exists,
+        patch("src.namespace.handlers.mount_namespace.os.mkdir") as mock_mkdir,
     ):
 
         handler.apply_mount_isolation()
 
-        mock_system.assert_has_calls(
-            [call("mount --make-private /"), call("mount -t proc proc /proc")]
-        )
+        mock_safe_private.assert_called_once()
+        mock_safe_mount.assert_called_once_with("/proc")
         mock_chroot.assert_called_once_with(test_root_fs)
         mock_chdir.assert_called_once_with("/")
         mock_exists.assert_called_once_with("/proc")

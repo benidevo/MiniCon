@@ -156,8 +156,11 @@ def safe_mount_proc(proc_path: str) -> None:
         SecurityError: If path is unsafe
         subprocess.CalledProcessError: If mount fails
     """
-    if not is_safe_path(proc_path):
-        raise SecurityError(f"Unsafe proc path: {proc_path}")
+    from ..constants import PROC_PATH
+
+    # Allow /proc path in container context
+    if proc_path != PROC_PATH:
+        raise SecurityError(f"Invalid proc path (must be {PROC_PATH}): {proc_path}")
 
     try:
         subprocess.run(
@@ -173,14 +176,14 @@ def safe_mount_proc(proc_path: str) -> None:
 
 
 def safe_set_hostname(hostname: str) -> None:
-    """Safely set hostname without shell injection.
+    """Safely set hostname using system call instead of external command.
 
     Args:
         hostname: Hostname to set
 
     Raises:
         SecurityError: If hostname is invalid
-        subprocess.CalledProcessError: If hostname setting fails
+        OSError: If hostname setting fails
     """
     if not hostname or len(hostname) > MAX_HOSTNAME_LENGTH:
         raise SecurityError(f"Invalid hostname length: {hostname}")
@@ -190,12 +193,23 @@ def safe_set_hostname(hostname: str) -> None:
         raise SecurityError(f"Invalid hostname characters: {hostname}")
 
     try:
-        subprocess.run(
-            ["hostname", hostname], check=True, capture_output=True, text=True
-        )
+        import ctypes
+
+        from .system import load_libc
+
+        libc = load_libc()
+
+        # Use sethostname system call directly
+        hostname_bytes = hostname.encode("utf-8")
+        result = libc.sethostname(hostname_bytes, len(hostname_bytes))
+
+        if result < 0:
+            errno = ctypes.get_errno()
+            raise OSError(errno, f"sethostname failed: {os.strerror(errno)}")
+
         logger.info(f"Successfully set hostname to {hostname}")
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Failed to set hostname: {e.stderr}")
+    except Exception as e:
+        logger.error(f"Failed to set hostname: {e}")
         raise
 
 

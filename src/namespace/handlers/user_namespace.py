@@ -38,7 +38,10 @@ class UserNamespaceHandler(NamespaceHandler):
         Returns:
             None
         """
-        libc = ctypes.CDLL("libc.so.6", use_errno=True)
+        from src.utils.system import load_libc
+
+        libc = load_libc()
+
         result = libc.unshare(CLONE_NEWUSER)
         if result < 0:
             errno = ctypes.get_errno()

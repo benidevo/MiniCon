@@ -148,7 +148,14 @@ class NamespaceOrchestrator:
         logger.info("Setting up namespaces...")
 
         try:
-            self._user_handler.setup()
+            # Skip user namespace setup when running as root
+            # User namespaces are incompatible with elevated privileges
+            if os.getuid() != 0:
+                logger.info("Setting up user namespace")
+                self._user_handler.setup()
+            else:
+                logger.info("Skipping user namespace setup (running as root)")
+
             self._mount_handler.setup()
             self._uts_handler.setup()
             self._pid_handler.setup()
@@ -190,8 +197,12 @@ class NamespaceOrchestrator:
             )
             logger.info(f"Container process created with PID: {self._container_pid}")
 
-            # Apply user mappings while child waits
-            if self._user_handler._uid_mappings and self._user_handler._gid_mappings:
+            # Apply user mappings while child waits (only if not running as root)
+            if (
+                os.getuid() != 0
+                and self._user_handler._uid_mappings
+                and self._user_handler._gid_mappings
+            ):
                 # Set the child PID on the user handler for the mappings
                 self._user_handler._child_pid = self._container_pid
                 self._user_handler.apply_user_isolation()
@@ -487,7 +498,8 @@ class NamespaceOrchestrator:
         try:
             self._apply_isolation()
 
-            if self._user_handler.user_id is not None:
+            # Only drop privileges if not running as root and user ID is set
+            if os.getuid() != 0 and self._user_handler.user_id is not None:
                 self._user_handler.drop_privileges()
 
             logger.info(f"Executing container command: {self._command}")

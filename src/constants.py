@@ -60,3 +60,37 @@ ALLOWED_HOSTNAME_CHARS = set(
 
 # Default safe path base for validation
 DEFAULT_SAFE_PATH_BASE = MINICON_BASE_DIR
+
+# Libc library paths for different architectures
+LIBC_PATHS = [
+    "libc.so.6",
+    "/usr/lib/aarch64-linux-gnu/libc.so.6",
+    "/lib/x86_64-linux-gnu/libc.so.6",
+    "/usr/lib/libc.dylib",  # macOS
+    "libc.dylib",  # macOS fallback
+]
+
+# Essential binary paths to copy to containers
+ESSENTIAL_BINARY_PATHS = [
+    ("/bin/sh", "/usr/bin/sh"),
+    ("/bin/echo", "/usr/bin/echo"),
+    ("/bin/cat", "/usr/bin/cat"),
+    ("/bin/ls", "/usr/bin/ls"),
+    ("/bin/bash", "/usr/bin/bash"),
+]
+
+# Container library directories
+CONTAINER_LIB_DIRS = ["lib", "lib64", "usr/lib", "lib/aarch64-linux-gnu"]
+
+# Essential system libraries to copy to containers
+ESSENTIAL_SYSTEM_LIBS = [
+    ("/lib/aarch64-linux-gnu/libc.so.6", "lib/aarch64-linux-gnu/libc.so.6"),
+    ("/lib/ld-linux-aarch64.so.1", "lib/ld-linux-aarch64.so.1"),
+    ("/usr/lib/aarch64-linux-gnu/libc.so.6", "lib/aarch64-linux-gnu/libc.so.6"),
+]
+
+# File permissions
+EXECUTABLE_PERMISSION = 0o755
+
+# System paths
+PROC_PATH = "/proc"

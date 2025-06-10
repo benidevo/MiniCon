@@ -186,18 +186,20 @@ def test_should_mount_proc_when_path_safe(mock_is_safe_path, mock_subprocess):
 def test_should_fail_mount_proc_when_path_unsafe(mock_is_safe_path):
     mock_is_safe_path.return_value = False
 
-    with pytest.raises(SecurityError, match="Unsafe proc path"):
+    with pytest.raises(SecurityError, match="Invalid proc path"):
         safe_mount_proc("/unsafe/../proc")
 
 
-@patch("src.utils.security.subprocess.run")
-def test_should_set_hostname_when_valid(mock_subprocess):
-    mock_subprocess.return_value = Mock(returncode=0)
+@patch("src.utils.system.load_libc")
+def test_should_set_hostname_when_valid(mock_load_libc):
+    mock_libc = Mock()
+    mock_libc.sethostname.return_value = 0
+    mock_load_libc.return_value = mock_libc
 
     safe_set_hostname("test-hostname")
 
-    mock_subprocess.assert_called_once_with(
-        ["hostname", "test-hostname"], check=True, capture_output=True, text=True
+    mock_libc.sethostname.assert_called_once_with(
+        b"test-hostname", len(b"test-hostname")
     )
 
 

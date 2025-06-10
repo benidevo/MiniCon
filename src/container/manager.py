@@ -182,12 +182,15 @@ class ContainerManager:
             orchestrator.cleanup_resources()
             raise RuntimeError(f"Failed to start container {container_id}: {e}") from e
 
-        monitor_thread = threading.Thread(
-            target=self._monitor_container,
-            args=(container_id,),
-            daemon=True,
-        )
-        monitor_thread.start()
+        try:
+            monitor_thread = threading.Thread(
+                target=self._monitor_container,
+                args=(container_id,),
+                daemon=True,
+            )
+            monitor_thread.start()
+        except RuntimeError as e:
+            logger.warning(f"Could not start monitoring thread: {e}")
 
     def _monitor_container(self, container_id: str) -> None:
         orchestrator = self._orchestrators.get(container_id)
@@ -320,6 +323,9 @@ class ContainerManager:
         for dir_name in ESSENTIAL_DIRECTORIES:
             os.makedirs(os.path.join(root_fs_path, dir_name), exist_ok=True)
 
+        # Copy essential system binaries
+        self._copy_essential_binaries(root_fs_path)
+
         hosts_file = os.path.join(root_fs_path, "etc/hosts")
         if not os.path.exists(hosts_file):
             with open(hosts_file, "w") as _file:
@@ -327,3 +333,67 @@ class ContainerManager:
                 _file.write(f"127.0.0.1 {container_id}\n")
 
         return root_fs_path
+
+    def _copy_essential_binaries(self, root_fs_path: str) -> None:
+        """Copy essential system binaries and libraries to container filesystem."""
+        import shutil
+
+        # Copy shared libraries first
+        self._copy_shared_libraries(root_fs_path)
+
+        from ..constants import ESSENTIAL_BINARY_PATHS
+
+        essential_binaries = ESSENTIAL_BINARY_PATHS
+
+        bin_dir = os.path.join(root_fs_path, "bin")
+
+        for binary_paths in essential_binaries:
+            binary_copied = False
+            for binary_path in binary_paths:
+                if os.path.exists(binary_path):
+                    try:
+                        binary_name = os.path.basename(binary_path)
+                        dest_path = os.path.join(bin_dir, binary_name)
+
+                        # Copy binary if it doesn't exist
+                        if not os.path.exists(dest_path):
+                            shutil.copy2(binary_path, dest_path)
+                            # Make executable
+                            from src.constants import EXECUTABLE_PERMISSION
+
+                            os.chmod(dest_path, EXECUTABLE_PERMISSION)
+                            logger.info(f"Copied {binary_path} to container")
+                            binary_copied = True
+                            break
+                    except Exception as e:
+                        logger.warning(f"Failed to copy {binary_path}: {e}")
+                        continue
+
+            if not binary_copied:
+                logger.warning(f"Could not find any of {binary_paths} to copy")
+
+    def _copy_shared_libraries(self, root_fs_path: str) -> None:
+        """Copy essential shared libraries to container filesystem."""
+        import shutil
+
+        from ..constants import CONTAINER_LIB_DIRS, ESSENTIAL_SYSTEM_LIBS
+
+        # Create lib directories
+        for lib_dir in CONTAINER_LIB_DIRS:
+            os.makedirs(os.path.join(root_fs_path, lib_dir), exist_ok=True)
+
+        # Essential libraries and their destination paths
+        essential_libs = ESSENTIAL_SYSTEM_LIBS
+
+        for src_path, dest_rel_path in essential_libs:
+            if os.path.exists(src_path):
+                try:
+                    dest_path = os.path.join(root_fs_path, dest_rel_path)
+                    dest_dir = os.path.dirname(dest_path)
+                    os.makedirs(dest_dir, exist_ok=True)
+
+                    if not os.path.exists(dest_path):
+                        shutil.copy2(src_path, dest_path)
+                        logger.info(f"Copied library {src_path} to container")
+                except Exception as e:
+                    logger.warning(f"Failed to copy library {src_path}: {e}")

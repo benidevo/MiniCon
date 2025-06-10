@@ -119,17 +119,18 @@ def test_should_reject_unsafe_paths_in_operations(mock_subprocess):
     with pytest.raises(SecurityError, match="Invalid source directory"):
         safe_copy_directory("../../../etc", "/tmp/safe")
 
-    with pytest.raises(SecurityError, match="Unsafe proc path"):
+    with pytest.raises(SecurityError, match="Invalid proc path"):
         safe_mount_proc("../../proc")
 
 
-@patch("src.utils.security.subprocess.run")
-def test_should_handle_subprocess_failures_properly(mock_subprocess):
-    from subprocess import CalledProcessError
-
+@patch("src.utils.system.load_libc")
+def test_should_handle_subprocess_failures_properly(mock_load_libc):
     from src.utils.security import safe_set_hostname
 
-    mock_subprocess.side_effect = CalledProcessError(1, ["hostname"], "Failed")
+    mock_libc = Mock()
+    mock_libc.sethostname.return_value = -1
+    mock_load_libc.return_value = mock_libc
 
-    with pytest.raises(CalledProcessError):
-        safe_set_hostname("test-host")
+    with patch("ctypes.get_errno", return_value=1):
+        with pytest.raises(OSError):
+            safe_set_hostname("test-host")

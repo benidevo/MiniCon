@@ -29,7 +29,10 @@ class MountNamespaceHandler(NamespaceHandler):
         This method should be called after the container process has been
         created and before it has been started.
         """
-        libc = ctypes.CDLL("libc.so.6", use_errno=True)
+        from src.utils.system import load_libc
+
+        libc = load_libc()
+
         result = libc.unshare(CLONE_NEWNS)
         if result < 0:
             errno = ctypes.get_errno()
@@ -95,14 +98,19 @@ class MountNamespaceHandler(NamespaceHandler):
         """Mount essential filesystems inside container."""
         try:
             # Mount /proc for process information
-            proc_path = "/proc"
-            if os.path.exists(proc_path):
-                safe_mount_proc(proc_path)
+            from src.constants import PROC_PATH
 
-            logger.info("Essential container filesystems mounted.")
+            if os.path.exists(PROC_PATH):
+                try:
+                    safe_mount_proc(PROC_PATH)
+                    logger.info("Successfully mounted /proc")
+                except Exception as proc_e:
+                    logger.warning(f"Could not mount /proc: {proc_e}")
+                    # Continue without /proc - not critical for basic operations
+
+            logger.info("Essential container filesystem setup completed.")
         except Exception as e:
             logger.warning(f"Failed to mount some essential filesystems: {e}")
-            # Continue anyway: proc is the most important
 
     @property
     def root_fs(self) -> Optional[str]:

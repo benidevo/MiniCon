@@ -1,8 +1,7 @@
 """Integration tests for security implementations."""
 
-import sys
 import tempfile
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
@@ -11,7 +10,6 @@ from src.container.model import State
 from src.utils.security import SecurityError
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="Requires Linux")
 def test_should_create_container_when_security_validation_passes():
     with tempfile.TemporaryDirectory() as temp_dir:
         with (
@@ -19,6 +17,11 @@ def test_should_create_container_when_security_validation_passes():
             patch("src.container.manager.MINICON_ROOTFS_DIR", f"{temp_dir}/rootfs"),
             patch("src.container.manager.MINICON_BASE_IMAGE", f"{temp_dir}/base"),
             patch("src.constants.DEFAULT_SAFE_PATH_BASE", temp_dir),
+            patch("src.container.manager.os.makedirs"),
+            patch("src.container.manager.os.path.exists", return_value=False),
+            patch("builtins.open", new_callable=MagicMock),
+            patch("src.container.registry.os.makedirs"),
+            patch("src.container.registry.os.replace"),
         ):
             manager = ContainerManager()
             manager.registry._registry_file = f"{temp_dir}/containers.json"
@@ -32,7 +35,6 @@ def test_should_create_container_when_security_validation_passes():
             assert container.command == ["echo", "hello"]
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="Requires Linux")
 def test_should_reject_invalid_container_names():
     with tempfile.TemporaryDirectory() as temp_dir:
         with (
@@ -40,6 +42,11 @@ def test_should_reject_invalid_container_names():
             patch("src.container.manager.MINICON_ROOTFS_DIR", f"{temp_dir}/rootfs"),
             patch("src.container.manager.MINICON_BASE_IMAGE", f"{temp_dir}/base"),
             patch("src.constants.DEFAULT_SAFE_PATH_BASE", temp_dir),
+            patch("src.container.manager.os.makedirs"),
+            patch("src.container.manager.os.path.exists", return_value=False),
+            patch("builtins.open", new_callable=MagicMock),
+            patch("src.container.registry.os.makedirs"),
+            patch("src.container.registry.os.replace"),
         ):
             manager = ContainerManager()
             manager.registry._registry_file = f"{temp_dir}/containers.json"
@@ -62,7 +69,6 @@ def test_should_reject_invalid_container_names():
                     manager.create(name, ["echo", "hello"])
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="Requires Linux")
 def test_should_reject_dangerous_commands():
     with tempfile.TemporaryDirectory() as temp_dir:
         with (
@@ -70,6 +76,11 @@ def test_should_reject_dangerous_commands():
             patch("src.container.manager.MINICON_ROOTFS_DIR", f"{temp_dir}/rootfs"),
             patch("src.container.manager.MINICON_BASE_IMAGE", f"{temp_dir}/base"),
             patch("src.constants.DEFAULT_SAFE_PATH_BASE", temp_dir),
+            patch("src.container.manager.os.makedirs"),
+            patch("src.container.manager.os.path.exists", return_value=False),
+            patch("builtins.open", new_callable=MagicMock),
+            patch("src.container.registry.os.makedirs"),
+            patch("src.container.registry.os.replace"),
         ):
             manager = ContainerManager()
             manager.registry._registry_file = f"{temp_dir}/containers.json"
@@ -95,8 +106,7 @@ def test_should_reject_dangerous_commands():
                     manager.create("test", cmd)
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="Requires Linux")
-@patch("src.utils.security.safe_copy_directory")
+@patch("src.container.manager.safe_copy_directory")
 def test_should_use_secure_copy_when_base_image_is_directory(mock_safe_copy):
     with tempfile.TemporaryDirectory() as temp_dir:
         import os
@@ -109,7 +119,23 @@ def test_should_use_secure_copy_when_base_image_is_directory(mock_safe_copy):
             patch("src.container.manager.MINICON_ROOTFS_DIR", f"{temp_dir}/rootfs"),
             patch("src.container.manager.MINICON_BASE_IMAGE", base_dir),
             patch("src.constants.DEFAULT_SAFE_PATH_BASE", temp_dir),
+            patch("src.container.manager.os.makedirs"),
+            patch("src.container.manager.os.path.exists") as mock_exists,
+            patch("src.container.manager.os.path.isdir") as mock_isdir,
+            patch("builtins.open", new_callable=MagicMock),
+            patch("src.container.registry.os.makedirs"),
+            patch("src.container.registry.os.replace"),
         ):
+            # Mock exists/isdir to return True for base_dir check
+            def exists_side_effect(path):
+                return path == base_dir
+
+            def isdir_side_effect(path):
+                return path == base_dir
+
+            mock_exists.side_effect = exists_side_effect
+            mock_isdir.side_effect = isdir_side_effect
+
             manager = ContainerManager()
             manager.registry._registry_file = f"{temp_dir}/containers.json"
 
@@ -123,8 +149,7 @@ def test_should_use_secure_copy_when_base_image_is_directory(mock_safe_copy):
             assert dest_path == f"{temp_dir}/rootfs/{container_id}"
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="Requires Linux")
-@patch("src.utils.security.safe_extract_tar")
+@patch("src.container.manager.safe_extract_tar")
 def test_should_use_secure_extraction_when_base_image_is_tar(mock_extract_tar):
     with tempfile.TemporaryDirectory() as temp_dir:
         base_tar = f"{temp_dir}/base.tar"
@@ -136,7 +161,23 @@ def test_should_use_secure_extraction_when_base_image_is_tar(mock_extract_tar):
             patch("src.container.manager.MINICON_ROOTFS_DIR", f"{temp_dir}/rootfs"),
             patch("src.container.manager.MINICON_BASE_IMAGE", base_tar),
             patch("src.constants.DEFAULT_SAFE_PATH_BASE", temp_dir),
+            patch("src.container.manager.os.makedirs"),
+            patch("src.container.manager.os.path.exists") as mock_exists,
+            patch("src.container.manager.os.path.isfile") as mock_isfile,
+            patch("builtins.open", new_callable=MagicMock),
+            patch("src.container.registry.os.makedirs"),
+            patch("src.container.registry.os.replace"),
         ):
+            # Mock exists/isfile to return True for base_tar check
+            def exists_side_effect(path):
+                return path == base_tar
+
+            def isfile_side_effect(path):
+                return path == base_tar and path.endswith(".tar")
+
+            mock_exists.side_effect = exists_side_effect
+            mock_isfile.side_effect = isfile_side_effect
+
             manager = ContainerManager()
             manager.registry._registry_file = f"{temp_dir}/containers.json"
 
@@ -150,12 +191,18 @@ def test_should_use_secure_extraction_when_base_image_is_tar(mock_extract_tar):
             assert dest_path == f"{temp_dir}/rootfs/{container_id}"
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="Requires Linux")
+@patch("src.container.manager.threading.Thread")
 @patch("src.namespace.orchestrator.NamespaceOrchestrator")
-def test_should_complete_lifecycle_when_security_validated(mock_orchestrator_class):
+def test_should_complete_lifecycle_when_security_validated(
+    mock_orchestrator_class, mock_thread_class
+):
     mock_orchestrator = Mock()
     mock_orchestrator.create_container_process.return_value = 12345
     mock_orchestrator_class.return_value = mock_orchestrator
+
+    # Mock thread to prevent actual thread creation
+    mock_thread = MagicMock()
+    mock_thread_class.return_value = mock_thread
 
     with tempfile.TemporaryDirectory() as temp_dir:
         with (
@@ -163,6 +210,11 @@ def test_should_complete_lifecycle_when_security_validated(mock_orchestrator_cla
             patch("src.container.manager.MINICON_ROOTFS_DIR", f"{temp_dir}/rootfs"),
             patch("src.container.manager.MINICON_BASE_IMAGE", f"{temp_dir}/base"),
             patch("src.constants.DEFAULT_SAFE_PATH_BASE", temp_dir),
+            patch("src.container.manager.os.makedirs"),
+            patch("src.container.manager.os.path.exists", return_value=False),
+            patch("builtins.open", new_callable=MagicMock),
+            patch("src.container.registry.os.makedirs"),
+            patch("src.container.registry.os.replace"),
         ):
             manager = ContainerManager()
             manager.registry._registry_file = f"{temp_dir}/containers.json"
@@ -174,6 +226,7 @@ def test_should_complete_lifecycle_when_security_validated(mock_orchestrator_cla
             assert container.name == "secure-test"
             assert container.command == ["echo", "secure"]
 
+            manager._orchestrator_class = mock_orchestrator_class
             manager.start(container_id)
 
             mock_orchestrator.configure.assert_called_once()
@@ -186,8 +239,7 @@ def test_should_complete_lifecycle_when_security_validated(mock_orchestrator_cla
             assert container.process_id == 12345
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="Requires Linux")
-@patch("src.utils.security.safe_copy_directory")
+@patch("src.container.manager.safe_copy_directory")
 def test_should_propagate_security_errors_during_creation(mock_safe_copy):
     mock_safe_copy.side_effect = SecurityError("Unsafe path detected")
 
@@ -202,7 +254,23 @@ def test_should_propagate_security_errors_during_creation(mock_safe_copy):
             patch("src.container.manager.MINICON_ROOTFS_DIR", f"{temp_dir}/rootfs"),
             patch("src.container.manager.MINICON_BASE_IMAGE", base_dir),
             patch("src.constants.DEFAULT_SAFE_PATH_BASE", temp_dir),
+            patch("src.container.manager.os.makedirs"),
+            patch("src.container.manager.os.path.exists") as mock_exists,
+            patch("src.container.manager.os.path.isdir") as mock_isdir,
+            patch("builtins.open", new_callable=MagicMock),
+            patch("src.container.registry.os.makedirs"),
+            patch("src.container.registry.os.replace"),
         ):
+            # Mock exists/isdir to return True for base_dir check
+            def exists_side_effect(path):
+                return path == base_dir
+
+            def isdir_side_effect(path):
+                return path == base_dir
+
+            mock_exists.side_effect = exists_side_effect
+            mock_isdir.side_effect = isdir_side_effect
+
             manager = ContainerManager()
             manager.registry._registry_file = f"{temp_dir}/containers.json"
 
@@ -210,9 +278,8 @@ def test_should_propagate_security_errors_during_creation(mock_safe_copy):
                 manager.create("test", ["echo", "hello"])
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="Requires Linux")
-@patch("src.utils.security.safe_make_mount_private")
-@patch("src.utils.security.safe_mount_proc")
+@patch("src.namespace.handlers.mount_namespace.safe_make_mount_private")
+@patch("src.namespace.handlers.mount_namespace.safe_mount_proc")
 @patch("src.namespace.handlers.mount_namespace.os.chroot")
 @patch("src.namespace.handlers.mount_namespace.os.chdir")
 @patch("src.namespace.handlers.mount_namespace.os.path.exists")
@@ -240,8 +307,7 @@ def test_should_use_secure_functions_for_mount_namespace(
     mock_mkdir.assert_called_once_with("/proc")
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="Requires Linux")
-@patch("src.utils.security.safe_set_hostname")
+@patch("src.namespace.handlers.uts_namespace.safe_set_hostname")
 def test_should_use_secure_functions_for_uts_namespace(mock_safe_hostname):
     from src.namespace.handlers.uts_namespace import UtsNamespaceHandler
 

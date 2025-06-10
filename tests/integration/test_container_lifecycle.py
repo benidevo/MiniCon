@@ -1,9 +1,8 @@
 """Integration tests for complete container lifecycle."""
 
 import os
-import sys
 import tempfile
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
@@ -11,19 +10,21 @@ from src.container.manager import ContainerManager
 from src.container.model import State
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="Requires Linux")
-@patch("src.container.manager.NamespaceOrchestrator")
-def test_should_complete_lifecycle_when_security_valid(mock_orchestrator_class):
+@patch("src.container.manager.threading.Thread")
+def test_should_complete_lifecycle_when_security_valid(mock_thread_class):
     temp_dir = tempfile.mkdtemp()
 
     try:
         mock_orchestrator = Mock()
         mock_orchestrator.create_container_process.return_value = 12345
         mock_orchestrator.wait_for_exit.return_value = 0
-        mock_orchestrator_class.return_value = mock_orchestrator
+
+        mock_orchestrator_class = Mock(return_value=mock_orchestrator)
+
+        mock_thread = MagicMock()
+        mock_thread_class.return_value = mock_thread
 
         registry_path = os.path.join(temp_dir, "containers.json")
-        os.makedirs(os.path.join(temp_dir, "rootfs"), exist_ok=True)
 
         with (
             patch("src.container.manager.MINICON_BASE_DIR", temp_dir),
@@ -36,10 +37,17 @@ def test_should_complete_lifecycle_when_security_valid(mock_orchestrator_class):
                 os.path.join(temp_dir, "base"),
             ),
             patch("src.constants.DEFAULT_SAFE_PATH_BASE", temp_dir),
+            patch("src.container.manager.os.makedirs"),
+            patch("src.container.manager.os.path.exists", return_value=False),
+            patch("builtins.open", new_callable=MagicMock),
+            patch("src.container.registry.os.makedirs"),
+            patch("src.container.registry.os.replace"),
         ):
             manager = ContainerManager()
+            manager._orchestrator_class = mock_orchestrator_class
             manager.registry._registry_file = registry_path
 
+            # Create container
             container_id = manager.create("test-container", ["echo", "hello"])
             assert len(container_id) == 8
 
@@ -51,6 +59,8 @@ def test_should_complete_lifecycle_when_security_valid(mock_orchestrator_class):
 
             manager.start(container_id)
             mock_orchestrator.create_container_process.assert_called_once()
+            mock_thread_class.assert_called_once()
+            mock_thread.start.assert_called_once()
 
             container = manager.registry.get_container(container_id)
             assert container.state == State.RUNNING

@@ -1,6 +1,5 @@
 """Integration tests for security validation functionality."""
 
-import sys
 import tempfile
 from unittest.mock import MagicMock, patch
 
@@ -215,9 +214,13 @@ def test_should_validate_names_and_commands_properly():
     assert not validate_command(["mount", "/dev/sda1"])
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="Requires Linux")
-def test_should_complete_workflow_when_dependencies_mocked():
+@patch("src.container.manager.threading.Thread")
+def test_should_complete_workflow_when_dependencies_mocked(mock_thread_class):
     temp_dir = tempfile.mkdtemp()
+
+    # Mock thread to prevent actual thread creation
+    mock_thread = MagicMock()
+    mock_thread_class.return_value = mock_thread
 
     try:
         with (
@@ -225,7 +228,7 @@ def test_should_complete_workflow_when_dependencies_mocked():
             patch("src.container.manager.MINICON_ROOTFS_DIR", f"{temp_dir}/rootfs"),
             patch("src.container.manager.MINICON_BASE_IMAGE", f"{temp_dir}/base"),
             patch("src.constants.DEFAULT_SAFE_PATH_BASE", temp_dir),
-            patch("src.container.manager.os.makedirs") as mock_makedirs,
+            patch("src.container.manager.os.makedirs"),
             patch("src.container.manager.os.path.exists", return_value=False),
             patch("builtins.open", new_callable=MagicMock),
             patch("src.container.registry.os.makedirs"),
@@ -250,9 +253,12 @@ def test_should_complete_workflow_when_dependencies_mocked():
             assert container.name == "integration-test"
             assert container.command == ["echo", "hello"]
 
-            assert mock_makedirs.call_count >= 2
+            # Mock the orchestrator class for start
+            manager._orchestrator_class = mock_orch_class
 
             manager.start(container_id)
+            mock_thread_class.assert_called_once()
+            mock_thread.start.assert_called_once()
 
             mock_orch.configure.assert_called_once()
             config_kwargs = mock_orch.configure.call_args[1]

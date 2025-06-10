@@ -62,6 +62,41 @@ class NamespaceHandler(ABC):
             self._child_pid = pid
         return pid
 
+    def fork_in_new_namespace_sync(
+        self, child_func: Callable[[], Any], read_fd: int, write_fd: int
+    ) -> int:
+        """Fork a process in the new namespace with synchronization.
+
+        This version waits for parent to set up UID/GID mappings before
+        the child process continues execution.
+
+        Args:
+            child_func: Function to call in the child process.
+            read_fd: File descriptor for child to read synchronization signal.
+            write_fd: File descriptor for parent to write synchronization signal.
+
+        Returns:
+            The PID (in the parent namespace) of the forked child.
+        """
+        pid = os.fork()
+        if pid == 0:
+            try:
+                # Child process: wait for parent signal
+                os.close(write_fd)  # Close write end in child
+                os.read(read_fd, 2)  # Wait for "go" signal
+                os.close(read_fd)  # Close read end after signal
+
+                exit_code = child_func()
+                os._exit(exit_code if isinstance(exit_code, int) else 0)
+            except Exception as e:
+                logger.error(f"Error in container process: {e}")
+                os._exit(1)
+        else:
+            # Parent process
+            os.close(read_fd)  # Close read end in parent
+            self._child_pid = pid
+        return pid
+
     @property
     def child_pid(self) -> Optional[int]:
         """Get the PID of the child process in the parent namespace.

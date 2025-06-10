@@ -58,24 +58,51 @@ class MountNamespaceHandler(NamespaceHandler):
             raise ValueError("Root filesystem not set.")
 
         try:
+            # Make all mounts private to prevent propagation
             safe_make_mount_private()
 
+            # Create minimal proc, sys, dev in container
+            self._setup_essential_mounts()
+
+            # Change root to container filesystem
             os.chroot(self._root_fs)
             os.chdir("/")
 
-            proc_path = "/proc"
-            if not os.path.exists(proc_path):
-                os.mkdir(proc_path)
+            # Mount essential filesystems inside container
+            self._mount_container_essentials()
 
-            safe_mount_proc(proc_path)
-
-            logger.info(f"Mount isolation applied to {self._root_fs}, proc mounted.")
+            logger.info(
+                f"Mount isolation applied to {self._root_fs}, essential mounts created."
+            )
         except SecurityError as e:
             logger.error(f"Security error during mount isolation: {e}")
             raise
         except Exception as e:
             logger.error(f"Failed to apply mount isolation: {e}")
             raise
+
+    def _setup_essential_mounts(self) -> None:
+        """Setup essential mount points in container root."""
+        if not self._root_fs:
+            return
+
+        essential_dirs = ["/proc", "/sys", "/dev", "/tmp"]
+        for dir_path in essential_dirs:
+            container_path = os.path.join(self._root_fs, dir_path.lstrip("/"))
+            os.makedirs(container_path, exist_ok=True)
+
+    def _mount_container_essentials(self) -> None:
+        """Mount essential filesystems inside container."""
+        try:
+            # Mount /proc for process information
+            proc_path = "/proc"
+            if os.path.exists(proc_path):
+                safe_mount_proc(proc_path)
+
+            logger.info("Essential container filesystems mounted.")
+        except Exception as e:
+            logger.warning(f"Failed to mount some essential filesystems: {e}")
+            # Continue anyway: proc is the most important
 
     @property
     def root_fs(self) -> Optional[str]:

@@ -165,28 +165,39 @@ def test_should_monitor_container_and_update_state_on_exit(manager, mock_orchest
 def test_should_recover_running_containers_on_init(mock_registry_file):
     with (
         patch("os.kill", side_effect=lambda pid, sig: True),
-        patch("src.container.manager.ContainerManager.start") as mock_start,
-        patch("os.makedirs"),
-        patch("os.path.exists", return_value=True),
-        patch("src.container.registry.ContainerRegistry._save_to_file"),
-    ):
-
-        ContainerManager()
-
-        mock_start.assert_called_once_with("def456")
-
-
-def test_should_not_recover_container_when_process_not_running(mock_registry_file):
-    with (
-        patch("os.kill", side_effect=OSError()),
-        patch("src.container.manager.ContainerManager.start") as mock_start,
+        patch("threading.Thread") as mock_thread,
         patch("os.makedirs"),
         patch("os.path.exists", return_value=True),
         patch("src.container.registry.ContainerRegistry._save_to_file"),
     ):
 
         manager = ContainerManager()
-        mock_start.assert_not_called()
+
+        # Verify that the running container was recovered by checking
+        # orchestrator is set up
+        assert "def456" in manager._orchestrators
+        orchestrator = manager._orchestrators["def456"]
+        assert orchestrator._container_pid == 67890
+
+        # Verify monitoring thread was started
+        mock_thread.assert_called_once()
+
+
+def test_should_not_recover_container_when_process_not_running(mock_registry_file):
+    with (
+        patch("os.kill", side_effect=OSError()),
+        patch("threading.Thread") as mock_thread,
+        patch("os.makedirs"),
+        patch("os.path.exists", return_value=True),
+        patch("src.container.registry.ContainerRegistry._save_to_file"),
+    ):
+
+        manager = ContainerManager()
+
+        # Verify that no orchestrator was set up for the dead process
+        assert "def456" not in manager._orchestrators
+
+        mock_thread.assert_not_called()
 
         running_containers = manager.registry.get_all_containers(State.RUNNING)
         assert len(running_containers) == 0

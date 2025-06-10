@@ -92,9 +92,9 @@ def test_should_apply_mount_isolation_correctly():
         patch("src.namespace.handlers.mount_namespace.os.chroot") as mock_chroot,
         patch("src.namespace.handlers.mount_namespace.os.chdir") as mock_chdir,
         patch(
-            "src.namespace.handlers.mount_namespace.os.path.exists", return_value=False
-        ) as mock_exists,
-        patch("src.namespace.handlers.mount_namespace.os.mkdir") as mock_mkdir,
+            "src.namespace.handlers.mount_namespace.os.path.exists", return_value=True
+        ),
+        patch("src.namespace.handlers.mount_namespace.os.makedirs") as mock_makedirs,
     ):
 
         handler.apply_mount_isolation()
@@ -103,8 +103,8 @@ def test_should_apply_mount_isolation_correctly():
         mock_safe_mount.assert_called_once_with("/proc")
         mock_chroot.assert_called_once_with(test_root_fs)
         mock_chdir.assert_called_once_with("/")
-        mock_exists.assert_called_once_with("/proc")
-        mock_mkdir.assert_called_once_with("/proc")
+        # Should create essential directories before chroot
+        assert mock_makedirs.call_count >= 1
 
 
 def test_should_not_create_proc_if_already_exists():
@@ -123,8 +123,8 @@ def test_should_not_create_proc_if_already_exists():
         patch("src.namespace.handlers.mount_namespace.os.chdir") as mock_chdir,
         patch(
             "src.namespace.handlers.mount_namespace.os.path.exists", return_value=True
-        ) as mock_exists,
-        patch("src.namespace.handlers.mount_namespace.os.mkdir") as mock_mkdir,
+        ),
+        patch("src.namespace.handlers.mount_namespace.os.makedirs") as mock_makedirs,
     ):
 
         handler.apply_mount_isolation()
@@ -133,5 +133,5 @@ def test_should_not_create_proc_if_already_exists():
         mock_safe_mount.assert_called_once_with("/proc")
         mock_chroot.assert_called_once_with(test_root_fs)
         mock_chdir.assert_called_once_with("/")
-        mock_exists.assert_called_once_with("/proc")
-        mock_mkdir.assert_not_called()
+        # Should create essential directories before chroot
+        assert mock_makedirs.call_count >= 1

@@ -65,8 +65,27 @@ class ContainerManager:
         running_containers = self.registry.get_all_containers(State.RUNNING)
         for container in running_containers:
             if container.process_id and self._is_process_running(container.process_id):
-                self.start(container.id)
+                orchestrator = self._orchestrator_class()
+                orchestrator._container_pid = container.process_id
+                self._orchestrators[container.id] = orchestrator
+
+                try:
+                    monitor_thread = threading.Thread(
+                        target=self._monitor_container,
+                        args=(container.id,),
+                        daemon=True,
+                    )
+                    monitor_thread.start()
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to start monitoring thread for container "
+                        f"{container.id}: {e}"
+                    )
+                    # Mark as exited since we can't monitor it
+                    self.registry.update_container_state(container.id, State.EXITED)
+                    self._orchestrators.pop(container.id, None)
             else:
+                # Process died, mark as exited
                 self.registry.update_container_state(container.id, State.EXITED)
                 self._orchestrators.pop(container.id, None)
 
@@ -175,11 +194,24 @@ class ContainerManager:
         if not orchestrator:
             return
 
-        exit_code = orchestrator.wait_for_exit()
-        self.registry.update_container_state(
-            container_id, State.EXITED, exit_code=exit_code
-        )
-        self._orchestrators.pop(container_id, None)
+        try:
+            exit_code = orchestrator.wait_for_exit()
+            self.registry.update_container_state(
+                container_id, State.EXITED, exit_code=exit_code
+            )
+        except (OSError, ChildProcessError) as e:
+            logger.warning(f"Failed to monitor container {container_id}: {e}")
+            # Process might have already exited, mark as exited with unknown code
+            self.registry.update_container_state(
+                container_id, State.EXITED, exit_code=-1
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error monitoring container {container_id}: {e}")
+            self.registry.update_container_state(
+                container_id, State.EXITED, exit_code=-1
+            )
+        finally:
+            self._orchestrators.pop(container_id, None)
 
     def stop(self, container_id: str) -> bool:
         """Stop a container.

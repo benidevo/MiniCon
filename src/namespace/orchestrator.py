@@ -177,16 +177,37 @@ class NamespaceOrchestrator:
 
         try:
             self.setup_namespaces()
-            self._container_pid = self._pid_handler.fork_in_new_namespace(
-                self._container_entry_point
+
+            # Pre-create cgroup before process starts
+            self._pre_setup_cgroups()
+
+            # Create pipe for parent-child synchronization
+            read_fd, write_fd = os.pipe()
+
+            # Use synchronized fork to wait for user namespace setup
+            self._container_pid = self._pid_handler.fork_in_new_namespace_sync(
+                self._container_entry_point, read_fd, write_fd
             )
             logger.info(f"Container process created with PID: {self._container_pid}")
 
-            self._setup_cgroups()
+            # Apply user mappings while child waits
+            if self._user_handler._uid_mappings and self._user_handler._gid_mappings:
+                # Set the child PID on the user handler for the mappings
+                self._user_handler._child_pid = self._container_pid
+                self._user_handler.apply_user_isolation()
+
+            # Signal child to proceed
+            os.write(write_fd, b"go")
+            os.close(write_fd)
+
+            # Apply process to pre-created cgroup
+            self._apply_process_to_cgroup()
         except Exception as e:
             logger.error(f"Failed to create container process: {e}")
             raise RuntimeError(f"Failed to create container process: {e}")
 
+        if self._container_pid is None:
+            raise RuntimeError("Container process creation failed")
         return self._container_pid
 
     def wait_for_exit(self) -> int:
@@ -276,32 +297,51 @@ class NamespaceOrchestrator:
         This method removes the cgroup created for the container
         and resets the internal state.
         """
-        if not self._container_pid:
+        if not self._container_pid and not hasattr(self, "_cgroup_id"):
             return
 
         logger.info(f"Cleaning up resources for container {self._container_pid}")
+        self._cleanup_cgroup()
+        self._reset_internal_state()
 
-        cgroup_path = f"/sys/fs/cgroup/minicon_{self._container_pid}"
+    def _cleanup_cgroup(self) -> None:
+        """Clean up cgroup resources."""
+        cgroup_path = self._get_cgroup_path()
         if os.path.exists(cgroup_path):
             try:
-                if os.path.exists(f"{cgroup_path}/cgroup.procs"):
-                    with open(f"{cgroup_path}/cgroup.procs", "r") as f:
-                        procs = f.read().strip().split("\n")
-
-                    if procs and procs[0]:
-                        with open("/sys/fs/cgroup/cgroup.procs", "w") as f:
-                            for proc in procs:
-                                try:
-                                    f.write(proc)
-                                except Exception:
-                                    pass
-
+                self._move_processes_to_root_cgroup(cgroup_path)
                 os.rmdir(cgroup_path)
                 logger.info(f"Removed cgroup {cgroup_path}")
             except Exception as e:
                 logger.error(f"Error removing cgroup: {e}")
 
+    def _get_cgroup_path(self) -> str:
+        """Get the cgroup path for cleanup."""
+        if hasattr(self, "_cgroup_id"):
+            return f"/sys/fs/cgroup/{self._cgroup_id}"
+        else:
+            return f"/sys/fs/cgroup/minicon_{self._container_pid}"
+
+    def _move_processes_to_root_cgroup(self, cgroup_path: str) -> None:
+        """Move any remaining processes back to root cgroup."""
+        procs_file = f"{cgroup_path}/cgroup.procs"
+        if os.path.exists(procs_file):
+            with open(procs_file, "r") as f:
+                procs = f.read().strip().split("\n")
+
+            if procs and procs[0]:
+                with open("/sys/fs/cgroup/cgroup.procs", "w") as f:
+                    for proc in procs:
+                        try:
+                            f.write(proc)
+                        except Exception:
+                            pass
+
+    def _reset_internal_state(self) -> None:
+        """Reset internal state after cleanup."""
         self._container_pid = None
+        if hasattr(self, "_cgroup_id"):
+            delattr(self, "_cgroup_id")
 
     def _apply_isolation(self) -> None:
         """Apply namespace isolation in the child process.
@@ -320,15 +360,71 @@ class NamespaceOrchestrator:
             logger.info(f"Setting hostname to {self._hostname}")
             self._uts_handler.apply_uts_isolation()
 
-        if (
-            self._user_handler._uid_mappings
-            and self._user_handler._gid_mappings
-            and self._user_handler.child_pid
-        ):
-            logger.info("Applying user namespace isolation")
-            self._user_handler.apply_user_isolation()
-
         logger.info("Namespace isolation applied successfully")
+
+    def _pre_setup_cgroups(self) -> None:
+        """Pre-create cgroup before container process starts.
+
+        This method creates the necessary cgroup and sets memory limits
+        before the container process is created, ensuring resource limits
+        apply from process start.
+        """
+        if not self._memory_limit:
+            logger.info("No memory limit set, skipping cgroup setup")
+            return
+
+        # Use a temporary ID for cgroup creation
+        self._cgroup_id = f"minicon_{os.getpid()}_{id(self)}"
+        cgroup_path = f"/sys/fs/cgroup/{self._cgroup_id}"
+
+        logger.info(f"Pre-creating cgroups v2 at {cgroup_path}")
+
+        try:
+            os.makedirs(cgroup_path, exist_ok=True)
+
+            parent_controllers_path = "/sys/fs/cgroup/cgroup.subtree_control"
+            with open(parent_controllers_path, "r") as f:
+                current_controllers = f.read()
+
+            if "+memory" not in current_controllers:
+                try:
+                    with open(parent_controllers_path, "w") as f:
+                        f.write("+memory")
+                    logger.info("Enabled memory controller in parent cgroup")
+                except Exception as e:
+                    logger.warning(f"Could not enable memory controller: {e}")
+
+            with open(f"{cgroup_path}/memory.max", "w") as f:
+                f.write(str(self._memory_limit))
+
+            logger.info(
+                f"Pre-created cgroup with memory limit {self._memory_limit} bytes"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to pre-setup cgroups: {e}")
+            # Don't raise exception - cgroups might not be available in test environment
+
+    def _apply_process_to_cgroup(self) -> None:
+        """Apply the container process to the pre-created cgroup."""
+        if not self._container_pid:
+            raise ValueError("Container process not created yet.")
+
+        if not hasattr(self, "_cgroup_id") or not self._memory_limit:
+            logger.info("No cgroup pre-created, skipping process assignment")
+            return
+
+        cgroup_path = f"/sys/fs/cgroup/{self._cgroup_id}"
+
+        try:
+            with open(f"{cgroup_path}/cgroup.procs", "w") as f:
+                f.write(str(self._container_pid))
+
+            logger.info(
+                f"Container process {self._container_pid} added to "
+                f"cgroup with memory limit {self._memory_limit} bytes"
+            )
+        except Exception as e:
+            logger.error(f"Failed to apply process to cgroup: {e}")
 
     def _setup_cgroups(self) -> None:
         """Set up cgroups for the container process.

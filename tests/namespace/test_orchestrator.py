@@ -53,20 +53,29 @@ def test_should_create_container_process_with_proper_isolation(configured_orches
             configured_orchestrator, "setup_namespaces"
         ) as mock_setup_namespaces,
         patch.object(
-            configured_orchestrator._pid_handler, "fork_in_new_namespace"
-        ) as mock_fork,
-        patch.object(configured_orchestrator, "_setup_cgroups") as mock_setup_cgroups,
+            configured_orchestrator._pid_handler, "fork_in_new_namespace_sync"
+        ) as mock_fork_sync,
+        patch.object(
+            configured_orchestrator, "_pre_setup_cgroups"
+        ) as mock_pre_setup_cgroups,
+        patch.object(
+            configured_orchestrator, "_apply_process_to_cgroup"
+        ) as mock_apply_process_to_cgroup,
+        patch("os.pipe", return_value=(3, 4)),
+        patch("os.write"),
+        patch("os.close"),
     ):
-        mock_fork.return_value = 12345
+        mock_fork_sync.return_value = 12345
 
         pid = configured_orchestrator.create_container_process()
 
         assert pid == 12345
         mock_setup_namespaces.assert_called_once()
-        mock_fork.assert_called_once_with(
-            configured_orchestrator._container_entry_point
+        mock_fork_sync.assert_called_once_with(
+            configured_orchestrator._container_entry_point, 3, 4
         )
-        mock_setup_cgroups.assert_called_once()
+        mock_pre_setup_cgroups.assert_called_once()
+        mock_apply_process_to_cgroup.assert_called_once()
 
 
 def test_should_apply_isolation_in_container_process(configured_orchestrator):
